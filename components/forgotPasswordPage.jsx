@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import toast, { Toaster } from 'react-hot-toast';
+import { theme } from '@/lib/theme';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -37,9 +38,9 @@ export default function ForgotPasswordPage() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#F4F5F7' }}>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: theme.colors.background }}>
         <Toaster />
-        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center my-8">
           <div className="mb-6">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
               <svg
@@ -62,7 +63,7 @@ export default function ForgotPasswordPage() {
             </p>
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-sm text-gray-700">
+          <div className="rounded-lg p-4 mb-6 text-sm text-gray-700 border" style={{ backgroundColor: theme.colors.secondary, borderColor: theme.colors.secondary }}>
             <p>
               Check your inbox and spam folder for the reset link. Click it to create a new password.
             </p>
@@ -71,7 +72,7 @@ export default function ForgotPasswordPage() {
           <Link
             href="/login"
             className="inline-block text-white py-2 px-6 font-semibold hover:opacity-90 transition"
-            style={{ backgroundColor: '#299D91', borderRadius: '8px' }}
+            style={{ backgroundColor: theme.colors.primary, borderRadius: theme.radius.button }}
           >
             Back to Login
           </Link>
@@ -81,11 +82,17 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#F4F5F7' }}>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: theme.colors.background }}>
       <Toaster />
-      <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+      <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md my-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Reset Password</h1>
+          <div className="flex justify-center mb-4">
+            <div className="text-4xl font-bold" style={{ color: theme.colors.primary }}>
+              {/* Replace this with your logo image */}
+              <img src="/assets/logo/logo.png" alt="Logo" className="h-20 w-auto" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Reset Password</h1>
           <p className="text-gray-600">Enter your email address to get the password reset link</p>
         </div>
 
@@ -109,7 +116,7 @@ export default function ForgotPasswordPage() {
             type="submit"
             disabled={loading}
             className="w-full text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: '#299D91', borderRadius: '8px' }}
+            style={{ backgroundColor: theme.colors.primary, borderRadius: theme.radius.button }}
           >
             {loading ? 'Sending...' : 'Send Reset Link'}
           </button>
@@ -118,7 +125,7 @@ export default function ForgotPasswordPage() {
         <div className="mt-6 text-center">
           <p className="text-gray-600">
             Remember your password?{' '}
-            <Link href="/login" className="font-medium hover:opacity-80" style={{ color: '#299D91' }}>
+            <Link href="/login" className="font-medium hover:opacity-80" style={{ color: theme.colors.primary }}>
               Sign in
             </Link>
           </p>
