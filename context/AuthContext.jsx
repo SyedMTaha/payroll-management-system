@@ -7,6 +7,9 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   updateProfile,
+  sendEmailVerification,
+  signInWithPopup,
+  GoogleAuthProvider,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -45,13 +48,20 @@ export const AuthProvider = ({ children }) => {
 
       await updateProfile(user, { displayName: name });
 
+      // Send email verification
+      await sendEmailVerification(user);
+
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         email: user.email,
         displayName: name,
         role: role,
+        emailVerified: false,
         createdAt: new Date().toISOString(),
       });
+
+      // Sign out immediately after signup to force email verification
+      await signOut(auth);
 
       return userCredential;
     } catch (error) {
@@ -61,7 +71,43 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      return await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // Check if email is verified
+      if (!userCredential.user.emailVerified) {
+        await signOut(auth); // Sign out the user
+        throw new Error('EMAIL_NOT_VERIFIED');
+      }
+
+      return userCredential;
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const loginWithGoogle = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(auth, provider);
+      const user = userCredential.user;
+
+      // Check if user exists in Firestore
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      
+      if (!userDoc.exists()) {
+        // New user, create profile
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || 'User',
+          role: 'manager',
+          emailVerified: user.emailVerified,
+          authProvider: 'google',
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      return userCredential;
     } catch (error) {
       throw error;
     }
@@ -80,6 +126,7 @@ export const AuthProvider = ({ children }) => {
     userRole,
     signup,
     login,
+    loginWithGoogle,
     logout,
     loading,
   };
