@@ -69,6 +69,13 @@ export default function EmployeePage() {
     salary: '',
     client: '',
     status: 'Active',
+    image: null,
+    imagePreview: null,
+    emiratesId: '',
+    passportNumber: '',
+    drivingLicense: '',
+    labourCard: '',
+    insuranceDocuments: '',
   });
 
   const paymentTypes = ['All', 'Weekly', 'Monthly', 'Per Delivery'];
@@ -100,11 +107,27 @@ export default function EmployeePage() {
   };
 
   const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setNewEmployeeForm(prev => ({
-      ...prev,
-      [name]: value,
-    }));
+    const { name, value, type, files } = e.target;
+    
+    if (type === 'file' && files.length > 0) {
+      const file = files[0];
+      const reader = new FileReader();
+      
+      reader.onloadend = () => {
+        setNewEmployeeForm(prev => ({
+          ...prev,
+          image: file,
+          imagePreview: reader.result,
+        }));
+      };
+      
+      reader.readAsDataURL(file);
+    } else {
+      setNewEmployeeForm(prev => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
   };
 
   const handleSubmitEmployee = () => {
@@ -127,7 +150,18 @@ export default function EmployeePage() {
 
     const newEmployee = {
       id: employees.length + 1,
-      ...newEmployeeForm,
+      name: newEmployeeForm.name,
+      role: newEmployeeForm.role,
+      paymentType: newEmployeeForm.paymentType,
+      salary: newEmployeeForm.salary,
+      client: newEmployeeForm.client,
+      status: newEmployeeForm.status,
+      image: newEmployeeForm.imagePreview,
+      emiratesId: newEmployeeForm.emiratesId,
+      passportNumber: newEmployeeForm.passportNumber,
+      drivingLicense: newEmployeeForm.drivingLicense,
+      labourCard: newEmployeeForm.labourCard,
+      insuranceDocuments: newEmployeeForm.insuranceDocuments,
       salaryHistory: [],
       advances: [],
       assets: [],
@@ -142,6 +176,13 @@ export default function EmployeePage() {
       salary: '',
       client: '',
       status: 'Active',
+      image: null,
+      imagePreview: null,
+      emiratesId: '',
+      passportNumber: '',
+      drivingLicense: '',
+      labourCard: '',
+      insuranceDocuments: '',
     });
     toast.success('Employee added successfully!');
   };
@@ -184,6 +225,7 @@ export default function EmployeePage() {
           <table className="w-full">
             <thead>
               <tr style={{ backgroundColor: 'rgba(41, 157, 145, 0.1)' }}>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Image</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Name</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Role</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Payment Type</th>
@@ -202,6 +244,23 @@ export default function EmployeePage() {
                       index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                     }`}
                   >
+                    <td className="px-6 py-4 text-center">
+                      {employee.image ? (
+                        <img
+                          src={employee.image}
+                          alt={employee.name}
+                          className="w-10 h-10 rounded-full object-cover border-2"
+                          style={{ borderColor: theme.colors.primary }}
+                        />
+                      ) : (
+                        <div
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold"
+                          style={{ backgroundColor: theme.colors.primary }}
+                        >
+                          {employee.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-800">{employee.name}</td>
                     <td className="px-6 py-4 text-sm text-gray-700">{employee.role}</td>
                     <td className="px-6 py-4 text-sm text-gray-700">
@@ -253,7 +312,7 @@ export default function EmployeePage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center">
+                  <td colSpan="8" className="px-6 py-12 text-center">
                     <p className="text-gray-500">No employees found with this filter</p>
                   </td>
                 </tr>
@@ -276,7 +335,24 @@ export default function EmployeePage() {
           >
             {/* Modal Header */}
             <div className="sticky top-0 flex items-center justify-between p-6 border-b border-gray-200" style={{ backgroundColor: theme.colors.background }}>
-              <h2 className="text-2xl font-bold text-gray-800">{selectedEmployee.name}</h2>
+              <div className="flex items-center gap-4">
+                {selectedEmployee.image ? (
+                  <img
+                    src={selectedEmployee.image}
+                    alt={selectedEmployee.name}
+                    className="w-16 h-16 rounded-lg object-cover border-2"
+                    style={{ borderColor: theme.colors.primary }}
+                  />
+                ) : (
+                  <div
+                    className="w-16 h-16 rounded-lg flex items-center justify-center text-white text-xl font-bold"
+                    style={{ backgroundColor: theme.colors.primary }}
+                  >
+                    {selectedEmployee.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <h2 className="text-2xl font-bold text-gray-800">{selectedEmployee.name}</h2>
+              </div>
               <button
                 onClick={() => setShowDetailModal(false)}
                 className="p-2 hover:bg-gray-200 rounded-lg transition"
@@ -304,6 +380,33 @@ export default function EmployeePage() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Client</label>
                   <p className="text-gray-900 font-medium">{selectedEmployee.client}</p>
+                </div>
+              </div>
+
+              {/* Documents Section */}
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-lg font-bold text-gray-800 mb-4">Documents & Identification</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 rounded-lg" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Emirates ID</label>
+                    <p className="text-gray-900 font-medium">{selectedEmployee.emiratesId || 'Not provided'}</p>
+                  </div>
+                  <div className="p-4 rounded-lg" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Passport Number</label>
+                    <p className="text-gray-900 font-medium">{selectedEmployee.passportNumber || 'Not provided'}</p>
+                  </div>
+                  <div className="p-4 rounded-lg" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Driving License</label>
+                    <p className="text-gray-900 font-medium">{selectedEmployee.drivingLicense || 'Not provided'}</p>
+                  </div>
+                  <div className="p-4 rounded-lg" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Labour Card</label>
+                    <p className="text-gray-900 font-medium">{selectedEmployee.labourCard || 'Not provided'}</p>
+                  </div>
+                  <div className="p-4 rounded-lg col-span-2" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Insurance Documents</label>
+                    <p className="text-gray-900 font-medium">{selectedEmployee.insuranceDocuments || 'Not provided'}</p>
+                  </div>
                 </div>
               </div>
 
@@ -541,6 +644,112 @@ export default function EmployeePage() {
                   <option value="Inactive">Inactive</option>
                   <option value="On Leave">On Leave</option>
                 </select>
+              </div>
+
+              {/* Employee Image */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-800 mb-2">Employee Image</label>
+                <div className="flex flex-col items-center gap-4">
+                  {newEmployeeForm.imagePreview && (
+                    <div className="relative w-32 h-32">
+                      <img
+                        src={newEmployeeForm.imagePreview}
+                        alt="Employee preview"
+                        className="w-full h-full object-cover rounded-lg border-2"
+                        style={{ borderColor: theme.colors.primary }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNewEmployeeForm(prev => ({
+                          ...prev,
+                          image: null,
+                          imagePreview: null,
+                        }))}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition"
+                      >
+                        <MdClose className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    name="image"
+                    onChange={handleFormChange}
+                    accept="image/*"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition cursor-pointer"
+                  />
+                  <p className="text-xs text-gray-500">Supported formats: JPG, PNG (Max 5MB)</p>
+                </div>
+              </div>
+
+              {/* Documents Section */}
+              <div className="border-t border-gray-200 pt-5">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Documents & Identification</h3>
+                
+                {/* Emirates ID */}
+                <div className="mb-5">
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">Emirates ID</label>
+                  <input
+                    type="text"
+                    name="emiratesId"
+                    value={newEmployeeForm.emiratesId}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                    placeholder="e.g., 784-1234-5678901-2"
+                  />
+                </div>
+
+                {/* Passport Number */}
+                <div className="mb-5">
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">Passport Number</label>
+                  <input
+                    type="text"
+                    name="passportNumber"
+                    value={newEmployeeForm.passportNumber}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                    placeholder="e.g., G12345678"
+                  />
+                </div>
+
+                {/* Driving License */}
+                <div className="mb-5">
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">Driving License</label>
+                  <input
+                    type="text"
+                    name="drivingLicense"
+                    value={newEmployeeForm.drivingLicense}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                    placeholder="e.g., 123456789"
+                  />
+                </div>
+
+                {/* Labour Card */}
+                <div className="mb-5">
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">Labour Card</label>
+                  <input
+                    type="text"
+                    name="labourCard"
+                    value={newEmployeeForm.labourCard}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                    placeholder="e.g., LC-2024-123456"
+                  />
+                </div>
+
+                {/* Insurance Documents */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-800 mb-2">Insurance Documents</label>
+                  <input
+                    type="text"
+                    name="insuranceDocuments"
+                    value={newEmployeeForm.insuranceDocuments}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                    placeholder="e.g., INS-2024-456789"
+                  />
+                </div>
               </div>
 
               {/* Modal Actions */}

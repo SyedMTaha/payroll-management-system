@@ -1,65 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MdAdd, MdClose, MdVisibility, MdBusiness } from 'react-icons/md';
+import { MdAdd, MdClose, MdVisibility, MdBusiness, MdDelete } from 'react-icons/md';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { theme } from '@/lib/theme';
 import toast from 'react-hot-toast';
 
 export default function CompaniesPage() {
-  const [companies, setCompanies] = useState([
-    {
-      id: 1,
-      name: 'Emirates Express',
-      serviceType: 'Delivery Services',
-      monthlyCharge: 15000,
-      assignedEmployees: ['Ahmed Hassan', 'Mohammed Ali'],
-      paymentStatus: 'Paid',
-      invoices: [
-        { month: 'Jan 2026', amount: 15000, status: 'Paid', paidDate: '2026-01-05' },
-        { month: 'Dec 2025', amount: 15000, status: 'Paid', paidDate: '2025-12-05' },
-      ],
-      paymentHistory: [
-        { date: '2026-01-05', amount: 15000, method: 'Bank Transfer' },
-        { date: '2025-12-05', amount: 15000, method: 'Bank Transfer' },
-      ],
-    },
-    {
-      id: 2,
-      name: 'Dubai Logistics',
-      serviceType: 'Fleet Management',
-      monthlyCharge: 22000,
-      assignedEmployees: ['Ali Khan', 'Omar Khalid'],
-      paymentStatus: 'Pending',
-      invoices: [
-        { month: 'Jan 2026', amount: 22000, status: 'Pending', paidDate: null },
-        { month: 'Dec 2025', amount: 22000, status: 'Paid', paidDate: '2025-12-08' },
-      ],
-      paymentHistory: [
-        { date: '2025-12-08', amount: 22000, method: 'Cheque' },
-        { date: '2025-11-10', amount: 22000, method: 'Bank Transfer' },
-      ],
-    },
-    {
-      id: 3,
-      name: 'Abu Dhabi Transport',
-      serviceType: 'Staff Management',
-      monthlyCharge: 18000,
-      assignedEmployees: ['Fatima Al-Mansouri', 'Sara Ahmed'],
-      paymentStatus: 'Paid',
-      invoices: [
-        { month: 'Jan 2026', amount: 18000, status: 'Paid', paidDate: '2026-01-03' },
-        { month: 'Dec 2025', amount: 18000, status: 'Paid', paidDate: '2025-12-03' },
-      ],
-      paymentHistory: [
-        { date: '2026-01-03', amount: 18000, method: 'Bank Transfer' },
-        { date: '2025-12-03', amount: 18000, method: 'Bank Transfer' },
-      ],
-    },
-  ]);
+  const [companies, setCompanies] = useState([]);
 
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [companyToDelete, setCompanyToDelete] = useState(null);
   const [newCompanyForm, setNewCompanyForm] = useState({
     name: '',
     serviceType: '',
@@ -84,7 +39,7 @@ export default function CompaniesPage() {
     }));
   };
 
-  const handleSubmitCompany = () => {
+  const handleSubmitCompany = async () => {
     if (!newCompanyForm.name.trim()) {
       toast.error('Company name is required');
       return;
@@ -95,7 +50,6 @@ export default function CompaniesPage() {
     }
 
     const newCompany = {
-      id: companies.length + 1,
       name: newCompanyForm.name.trim(),
       serviceType: newCompanyForm.serviceType.trim() || 'General Services',
       monthlyCharge: parseFloat(newCompanyForm.monthlyCharge),
@@ -103,9 +57,16 @@ export default function CompaniesPage() {
       paymentStatus: 'Pending',
       invoices: [],
       paymentHistory: [],
+      createdAt: Date.now(),
     };
 
-    setCompanies([...companies, newCompany]);
+    try {
+      await addDoc(collection(db, 'companies'), newCompany);
+      toast.success('Company added successfully!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to add company');
+    }
     setShowAddModal(false);
     setNewCompanyForm({
       name: '',
@@ -113,7 +74,6 @@ export default function CompaniesPage() {
       monthlyCharge: '',
       assignedEmployees: '',
     });
-    toast.success('Company added successfully!');
   };
 
   const getTotalRevenue = () => {
@@ -136,33 +96,54 @@ export default function CompaniesPage() {
   const paidRevenue = getPaidRevenue();
   const pendingRevenue = getPendingRevenue();
 
+  // Subscribe to companies collection
+  useEffect(() => {
+    const companiesRef = collection(db, 'companies');
+    const unsub = onSnapshot(companiesRef, (snapshot) => {
+      const list = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+      setCompanies(list);
+    }, (error) => {
+      console.error('Error fetching companies:', error);
+      toast.error('Failed to fetch companies');
+    });
+
+    return () => unsub();
+  }, []);
+
   // Handle Escape key to close modals
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
         if (showDetailModal) setShowDetailModal(false);
         if (showAddModal) setShowAddModal(false);
+        if (showDeleteConfirm) setShowDeleteConfirm(false);
       }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [showDetailModal, showAddModal]);
+  }, [showDetailModal, showAddModal, showDeleteConfirm]);
+
+  const requestDeleteCompany = (company) => {
+    setCompanyToDelete(company);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteCompany = async () => {
+    if (!companyToDelete) return;
+    try {
+      await deleteDoc(doc(db, 'companies', companyToDelete.id));
+      toast.success('Company deleted');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to delete');
+    }
+    setShowDeleteConfirm(false);
+    setCompanyToDelete(null);
+  };
 
   return (
     <div className="space-y-6 w-full max-w-full overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Client Companies</h2>
-        <button
-          onClick={handleAddCompany}
-          className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
-          style={{ backgroundColor: theme.colors.primary, borderRadius: theme.radius.button }}
-        >
-          <MdAdd className="w-5 h-5" />
-          <span>Add Company</span>
-        </button>
-      </div>
 
       {/* Revenue Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 w-full">
@@ -182,6 +163,18 @@ export default function CompaniesPage() {
 
       {/* Companies Table */}
       <div className="bg-white rounded-xl shadow-md overflow-hidden" style={{ backgroundColor: theme.colors.background }}>
+        {/* Header inside card */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 sm:p-6 border-b" style={{ borderColor: theme.colors.border.light }}>
+          <h2 className="text-2xl font-bold text-gray-800">Client Companies</h2>
+          <button
+            onClick={handleAddCompany}
+            className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
+            style={{ backgroundColor: theme.colors.primary, borderRadius: theme.radius.button }}
+          >
+            <MdAdd className="w-5 h-5" />
+            <span>Add Company</span>
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -228,13 +221,21 @@ export default function CompaniesPage() {
                       </span>
                     </td>
                     <td className="px-3 sm:px-6 py-3 sm:py-4">
-                      <div className="flex items-center justify-center">
+                      <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => handleViewCompany(company)}
                           className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-white text-xs font-semibold hover:opacity-90 whitespace-nowrap"
                           style={{ backgroundColor: theme.colors.primary }}
                         >
                           View Details
+                        </button>
+                        <button
+                          onClick={() => requestDeleteCompany(company)}
+                          className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-white text-xs font-semibold hover:opacity-90 whitespace-nowrap"
+                          style={{ backgroundColor: theme.colors.error }}
+                          title="Delete Company"
+                        >
+                          <span className="flex items-center gap-1"><MdDelete className="w-4 h-4" /> Delete</span>
                         </button>
                       </div>
                     </td>
@@ -392,6 +393,49 @@ export default function CompaniesPage() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && companyToDelete && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setShowDeleteConfirm(false)}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-lg max-w-md w-full my-8 max-h-[90vh] overflow-y-auto" 
+            style={{ backgroundColor: theme.colors.background }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800">Delete Company</h2>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="p-2 hover:bg-gray-200 rounded-lg transition"
+              >
+                <MdClose className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-gray-700">Are you sure you want to delete <span className="font-semibold">{companyToDelete.name}</span>? This action cannot be undone.</p>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={confirmDeleteCompany}
+                  className="flex-1 text-white px-6 py-2 rounded-lg hover:opacity-90 transition font-medium"
+                  style={{ backgroundColor: theme.colors.error }}
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 text-gray-700 px-6 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition font-medium"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
