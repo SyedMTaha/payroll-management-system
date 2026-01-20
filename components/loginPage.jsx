@@ -47,17 +47,47 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
+      toast.success('Login successful! Redirecting...', {
+        duration: 2000,
+        position: 'top-center',
+      });
       router.push('/dashboard');
     } catch (error) {
-      if (error.message === 'EMAIL_NOT_VERIFIED') {
-        setError('Email not verified yet. Please verify your email first.');
-        toast.error('Email not verified yet. Please check your inbox and verify your email before logging in.', {
+      if (error.code === 'EMAIL_NOT_VERIFIED') {
+        const message = 'Email not verified yet. Please check your inbox and verify your email before logging in.';
+        setError('Email not verified yet.');
+        toast.error(message, {
           duration: 5000,
           position: 'top-center',
         });
+      } else if (error.code === 'auth/invalid-credential') {
+        const message = 'Invalid email or password. Please try again.';
+        setError(message);
+        toast.error(message, {
+          duration: 4000,
+          position: 'top-center',
+        });
+      } else if (error.code === 'auth/user-not-found') {
+        const message = 'No account found with this email. Please sign up first.';
+        setError(message);
+        toast.error(message, {
+          duration: 4000,
+          position: 'top-center',
+        });
+      } else if (error.code === 'auth/too-many-requests') {
+        const message = 'Too many failed login attempts. Please try again later.';
+        setError(message);
+        toast.error(message, {
+          duration: 4000,
+          position: 'top-center',
+        });
       } else {
-        setError(error.message || 'Failed to login. Please check your credentials.');
-        toast.error('Failed to login. Please check your credentials.');
+        const message = error.message || 'Failed to login. Please try again.';
+        setError(message);
+        toast.error(message, {
+          duration: 4000,
+          position: 'top-center',
+        });
       }
     } finally {
       setLoading(false);

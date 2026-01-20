@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { MdDashboard, MdPeople, MdAttachMoney, MdReceiptLong, MdReceipt, MdBusiness, MdSettings, MdLogout } from 'react-icons/md';
+import { MdDashboard, MdPeople, MdAttachMoney, MdReceiptLong, MdReceipt, MdBusiness, MdSettings, MdLogout, MdDirectionsCar } from 'react-icons/md';
 import { theme } from '@/lib/theme';
 
 const navItems = [
@@ -17,6 +17,16 @@ const navItems = [
     name: 'Employees',
     href: '/dashboard/employees',
     icon: MdPeople,
+  },
+  {
+    name: 'Captains',
+    href: '/dashboard/captains',
+    icon: MdPeople,
+  },
+  {
+    name: 'Fleet',
+    href: '/dashboard/fleet',
+    icon: MdDirectionsCar,
   },
   {
     name: 'Payroll',

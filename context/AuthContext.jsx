@@ -76,11 +76,30 @@ export const AuthProvider = ({ children }) => {
       // Check if email is verified
       if (!userCredential.user.emailVerified) {
         await signOut(auth); // Sign out the user
-        throw new Error('EMAIL_NOT_VERIFIED');
+        const error = new Error('EMAIL_NOT_VERIFIED');
+        error.code = 'EMAIL_NOT_VERIFIED';
+        throw error;
       }
 
       return userCredential;
     } catch (error) {
+      if (error.code === 'auth/invalid-credential') {
+        const err = new Error('Invalid email or password');
+        err.code = 'auth/invalid-credential';
+        throw err;
+      } else if (error.code === 'auth/user-not-found') {
+        const err = new Error('No account found with this email');
+        err.code = 'auth/user-not-found';
+        throw err;
+      } else if (error.code === 'auth/wrong-password') {
+        const err = new Error('Incorrect password');
+        err.code = 'auth/wrong-password';
+        throw err;
+      } else if (error.code === 'auth/too-many-requests') {
+        const err = new Error('Too many failed login attempts. Please try again later.');
+        err.code = 'auth/too-many-requests';
+        throw err;
+      }
       throw error;
     }
   };
@@ -109,7 +128,14 @@ export const AuthProvider = ({ children }) => {
 
       return userCredential;
     } catch (error) {
-      throw error;
+      if (error.code === 'auth/popup-closed-by-user') {
+        const err = new Error('Popup closed by user');
+        err.code = 'auth/popup-closed-by-user';
+        throw err;
+      }
+      const err = new Error('Failed to sign in with Google');
+      err.code = error.code || 'unknown';
+      throw err;
     }
   };
 

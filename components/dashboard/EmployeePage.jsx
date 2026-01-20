@@ -1,61 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MdEdit, MdVisibility, MdClose, MdAdd } from 'react-icons/md';
+import { MdEdit, MdVisibility, MdClose, MdAdd, MdDelete } from 'react-icons/md';
 import { theme } from '@/lib/theme';
 import toast from 'react-hot-toast';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, orderBy } from 'firebase/firestore';
+import { getStorage, ref, uploadString, deleteObject } from 'firebase/storage';
 
 export default function EmployeePage() {
-  const [employees, setEmployees] = useState([
-    {
-      id: 1,
-      name: 'Ahmed Hassan',
-      role: 'Delivery Driver',
-      paymentType: 'Per Delivery',
-      salary: 'AED 50/delivery',
-      client: 'Emirates Express',
-      status: 'Active',
-      salaryHistory: [
-        { month: 'Jan 2026', amount: 'AED 2,500', deliveries: 50 },
-        { month: 'Dec 2025', amount: 'AED 2,300', deliveries: 46 },
-      ],
-      advances: [
-        { date: '15 Jan 2026', amount: 'AED 500', status: 'Pending' },
-      ],
-      assets: ['Bike - Yamaha YZF', 'Delivery Bag', 'GPS Device'],
-    },
-    {
-      id: 2,
-      name: 'Fatima Al-Mansouri',
-      role: 'Accountant',
-      paymentType: 'Monthly',
-      salary: 'AED 5,500',
-      client: 'Main Office',
-      status: 'Active',
-      salaryHistory: [
-        { month: 'Jan 2026', amount: 'AED 5,500', deliveries: '1 month' },
-        { month: 'Dec 2025', amount: 'AED 5,500', deliveries: '1 month' },
-      ],
-      advances: [],
-      assets: ['Laptop - Dell XPS'],
-    },
-    {
-      id: 3,
-      name: 'Mohammed Ali',
-      role: 'Field Officer',
-      paymentType: 'Weekly',
-      salary: 'AED 1,200/week',
-      client: 'Dubai Operations',
-      status: 'Active',
-      salaryHistory: [
-        { month: 'Week 2 Jan', amount: 'AED 1,200', deliveries: '1 week' },
-      ],
-      advances: [
-        { date: '10 Jan 2026', amount: 'AED 300', status: 'Paid' },
-      ],
-      assets: ['Mobile Phone', 'Camera', 'Uniform'],
-    },
-  ]);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const [filterPaymentType, setFilterPaymentType] = useState('All');
   const [selectedEmployee, setSelectedEmployee] = useState(null);
@@ -76,13 +34,63 @@ export default function EmployeePage() {
     drivingLicense: '',
     labourCard: '',
     insuranceDocuments: '',
+    // Document images + previews
+    emiratesIdImage: null,
+    emiratesIdImagePreview: null,
+    passportImage: null,
+    passportImagePreview: null,
+    drivingLicenseImage: null,
+    drivingLicenseImagePreview: null,
+    labourCardImage: null,
+    labourCardImagePreview: null,
+    insuranceDocumentsImage: null,
+    insuranceDocumentsImagePreview: null,
   });
 
   const paymentTypes = ['All', 'Weekly', 'Monthly', 'Per Delivery'];
 
-  const filteredEmployees = filterPaymentType === 'All'
-    ? employees
-    : employees.filter(emp => emp.paymentType === filterPaymentType);
+  // Filter by payment type and search term
+  const filteredEmployees = employees
+    .filter(emp => filterPaymentType === 'All' || emp.paymentType === filterPaymentType)
+    .filter(emp => 
+      emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      emp.emiratesId?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedEmployees = filteredEmployees.slice(startIndex, startIndex + itemsPerPage);
+
+  // Reset to first page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterPaymentType]);
+
+  // Load employees from Firestore on component mount
+  useEffect(() => {
+    const loadEmployees = async () => {
+      try {
+        setLoading(true);
+        const q = query(collection(db, 'employees'), orderBy('createdAt', 'desc'));
+        const querySnapshot = await getDocs(q);
+        const loadedEmployees = querySnapshot.docs.map(doc => ({
+          ...doc.data(),
+          docId: doc.id,
+        }));
+        setEmployees(loadedEmployees);
+      } catch (error) {
+        console.error('Error loading employees:', error);
+        toast.error('Failed to load employees');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadEmployees();
+  }, []);
 
   // Handle Escape key to close modals
   useEffect(() => {
@@ -97,6 +105,20 @@ export default function EmployeePage() {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [showDetailModal, showAddModal]);
 
+  // Upload image to Firebase Storage
+  const uploadImageToStorage = async (dataUrl, employeeId, fieldName) => {
+    try {
+      const storage = getStorage();
+      const fileName = `employees/${employeeId}/${fieldName}_${Date.now()}.jpg`;
+      const storageRef = ref(storage, fileName);
+      await uploadString(storageRef, dataUrl, 'data_url');
+      return fileName;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      return null;
+    }
+  };
+
   const handleViewEmployee = (employee) => {
     setSelectedEmployee(employee);
     setShowDetailModal(true);
@@ -108,26 +130,29 @@ export default function EmployeePage() {
 
   const handleFormChange = (e) => {
     const { name, value, type, files } = e.target;
-    
-    if (type === 'file' && files.length > 0) {
-      const file = files[0];
+
+    if (type === 'file') {
+      const file = files && files[0];
+      if (!file) return;
+
       const reader = new FileReader();
-      
       reader.onloadend = () => {
-        setNewEmployeeForm(prev => ({
+        // Determine preview key based on input name
+        const previewKey = `${name}Preview`;
+        setNewEmployeeForm((prev) => ({
           ...prev,
-          image: file,
-          imagePreview: reader.result,
+          [name]: file,
+          [previewKey]: reader.result,
         }));
       };
-      
       reader.readAsDataURL(file);
-    } else {
-      setNewEmployeeForm(prev => ({
-        ...prev,
-        [name]: value,
-      }));
+      return;
     }
+
+    setNewEmployeeForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
 
   const handleSubmitEmployee = () => {
@@ -148,75 +173,250 @@ export default function EmployeePage() {
       return;
     }
 
-    const newEmployee = {
-      id: employees.length + 1,
-      name: newEmployeeForm.name,
-      role: newEmployeeForm.role,
-      paymentType: newEmployeeForm.paymentType,
-      salary: newEmployeeForm.salary,
-      client: newEmployeeForm.client,
-      status: newEmployeeForm.status,
-      image: newEmployeeForm.imagePreview,
-      emiratesId: newEmployeeForm.emiratesId,
-      passportNumber: newEmployeeForm.passportNumber,
-      drivingLicense: newEmployeeForm.drivingLicense,
-      labourCard: newEmployeeForm.labourCard,
-      insuranceDocuments: newEmployeeForm.insuranceDocuments,
-      salaryHistory: [],
-      advances: [],
-      assets: [],
-    };
+    saveEmployeeToFirestore();
+  };
 
-    setEmployees([...employees, newEmployee]);
-    setShowAddModal(false);
-    setNewEmployeeForm({
-      name: '',
-      role: '',
-      paymentType: 'Monthly',
-      salary: '',
-      client: '',
-      status: 'Active',
-      image: null,
-      imagePreview: null,
-      emiratesId: '',
-      passportNumber: '',
-      drivingLicense: '',
-      labourCard: '',
-      insuranceDocuments: '',
-    });
-    toast.success('Employee added successfully!');
+  const handleDeleteEmployee = async (employee) => {
+    try {
+      if (!window.confirm(`Are you sure you want to delete ${employee.name}?`)) {
+        return;
+      }
+
+      toast.loading('Deleting employee...');
+      const storage = getStorage();
+
+      // Delete images from storage
+      const imagePaths = [
+        employee.image,
+        employee.emiratesIdImage,
+        employee.passportImage,
+        employee.drivingLicenseImage,
+        employee.labourCardImage,
+        employee.insuranceDocumentsImage,
+      ];
+
+      for (const path of imagePaths) {
+        if (path) {
+          try {
+            const fileRef = ref(storage, path);
+            await deleteObject(fileRef);
+          } catch (err) {
+            console.log('Image already deleted or does not exist');
+          }
+        }
+      }
+
+      // Delete from Firestore
+      await deleteDoc(doc(db, 'employees', employee.docId));
+
+      // Update local state
+      setEmployees(employees.filter(emp => emp.docId !== employee.docId));
+
+      toast.dismiss();
+      toast.success('Employee deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting employee:', error);
+      toast.dismiss();
+      toast.error('Failed to delete employee');
+    }
+  };
+
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return null;
+    // If it's already a URL (from old data or preview), return it
+    if (imagePath.startsWith('http') || imagePath.startsWith('data:')) {
+      return imagePath;
+    }
+    // Otherwise it's a Firebase Storage path, construct the URL
+    return `https://firebasestorage.googleapis.com/v0/b/${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}/o/${encodeURIComponent(imagePath)}?alt=media`;
+  };
+
+  const saveEmployeeToFirestore = async () => {
+    try {
+      toast.loading('Saving employee...');
+      const storage = getStorage();
+      const timestamp = Date.now();
+      const employeeId = `emp_${timestamp}`;
+
+      // Upload images in parallel
+      const imageUploads = [];
+      
+      if (newEmployeeForm.imagePreview) {
+        imageUploads.push(
+          uploadImageToStorage(newEmployeeForm.imagePreview, employeeId, 'profile')
+        );
+      } else {
+        imageUploads.push(Promise.resolve(null));
+      }
+
+      if (newEmployeeForm.emiratesIdImagePreview) {
+        imageUploads.push(
+          uploadImageToStorage(newEmployeeForm.emiratesIdImagePreview, employeeId, 'emiratesId')
+        );
+      } else {
+        imageUploads.push(Promise.resolve(null));
+      }
+
+      if (newEmployeeForm.passportImagePreview) {
+        imageUploads.push(
+          uploadImageToStorage(newEmployeeForm.passportImagePreview, employeeId, 'passport')
+        );
+      } else {
+        imageUploads.push(Promise.resolve(null));
+      }
+
+      if (newEmployeeForm.drivingLicenseImagePreview) {
+        imageUploads.push(
+          uploadImageToStorage(newEmployeeForm.drivingLicenseImagePreview, employeeId, 'drivingLicense')
+        );
+      } else {
+        imageUploads.push(Promise.resolve(null));
+      }
+
+      if (newEmployeeForm.labourCardImagePreview) {
+        imageUploads.push(
+          uploadImageToStorage(newEmployeeForm.labourCardImagePreview, employeeId, 'labourCard')
+        );
+      } else {
+        imageUploads.push(Promise.resolve(null));
+      }
+
+      if (newEmployeeForm.insuranceDocumentsImagePreview) {
+        imageUploads.push(
+          uploadImageToStorage(newEmployeeForm.insuranceDocumentsImagePreview, employeeId, 'insurance')
+        );
+      } else {
+        imageUploads.push(Promise.resolve(null));
+      }
+
+      const [
+        profilePath,
+        emiratesIdPath,
+        passportPath,
+        drivingLicensePath,
+        labourCardPath,
+        insurancePath,
+      ] = await Promise.all(imageUploads);
+
+      // Create employee object for Firestore
+      const newEmployee = {
+        name: newEmployeeForm.name,
+        role: newEmployeeForm.role,
+        paymentType: newEmployeeForm.paymentType,
+        salary: newEmployeeForm.salary,
+        client: newEmployeeForm.client,
+        status: newEmployeeForm.status,
+        image: profilePath,
+        emiratesId: newEmployeeForm.emiratesId,
+        emiratesIdImage: emiratesIdPath,
+        passportNumber: newEmployeeForm.passportNumber,
+        passportImage: passportPath,
+        drivingLicense: newEmployeeForm.drivingLicense,
+        drivingLicenseImage: drivingLicensePath,
+        labourCard: newEmployeeForm.labourCard,
+        labourCardImage: labourCardPath,
+        insuranceDocuments: newEmployeeForm.insuranceDocuments,
+        insuranceDocumentsImage: insurancePath,
+        salaryHistory: [],
+        advances: [],
+        assets: [],
+        createdAt: new Date(),
+      };
+
+      // Add to Firestore
+      const docRef = await addDoc(collection(db, 'employees'), newEmployee);
+
+      // Update local state
+      setEmployees([
+        { ...newEmployee, docId: docRef.id },
+        ...employees,
+      ]);
+
+      setShowAddModal(false);
+      setNewEmployeeForm({
+        name: '',
+        role: '',
+        paymentType: 'Monthly',
+        salary: '',
+        client: '',
+        status: 'Active',
+        image: null,
+        imagePreview: null,
+        emiratesId: '',
+        emiratesIdImage: null,
+        emiratesIdImagePreview: null,
+        passportNumber: '',
+        passportImage: null,
+        passportImagePreview: null,
+        drivingLicense: '',
+        drivingLicenseImage: null,
+        drivingLicenseImagePreview: null,
+        labourCard: '',
+        labourCardImage: null,
+        labourCardImagePreview: null,
+        insuranceDocuments: '',
+        insuranceDocumentsImage: null,
+        insuranceDocumentsImagePreview: null,
+      });
+
+      toast.dismiss();
+      toast.success('Employee added successfully!');
+    } catch (error) {
+      console.error('Error saving employee:', error);
+      toast.dismiss();
+      toast.error('Failed to save employee');
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header with Filters */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex flex-wrap gap-2">
-          {paymentTypes.map((type) => (
-            <button
-              key={type}
-              onClick={() => setFilterPaymentType(type)}
-              className={`px-4 py-2 rounded-lg transition ${
-                filterPaymentType === type
-                  ? 'text-white'
-                  : 'text-gray-700 border border-gray-300 hover:border-gray-400'
-              }`}
-              style={{
-                backgroundColor: filterPaymentType === type ? theme.colors.primary : 'transparent',
-              }}
-            >
-              {type}
-            </button>
-          ))}
+      {/* Header with Filters and Search */}
+      <div className="flex flex-col gap-4">
+        {/* Search Bar */}
+        <div className="flex-1">
+          <input
+            type="text"
+            placeholder="🔍 Search by name, role, client, or Emirates ID..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+          />
         </div>
-        <button
-          onClick={handleAddEmployee}
-          className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
-          style={{ backgroundColor: theme.colors.primary, borderRadius: theme.radius.button }}
-        >
-          <MdAdd className="w-5 h-5" />
-          <span>Add Employee</span>
-        </button>
+
+        {/* Filters and Add Button */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex flex-wrap gap-2">
+            {paymentTypes.map((type) => (
+              <button
+                key={type}
+                onClick={() => setFilterPaymentType(type)}
+                className={`px-4 py-2 rounded-lg transition ${
+                  filterPaymentType === type
+                    ? 'text-white'
+                    : 'text-gray-700 border border-gray-300 hover:border-gray-400'
+                }`}
+                style={{
+                  backgroundColor: filterPaymentType === type ? theme.colors.primary : 'transparent',
+                }}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleAddEmployee}
+            className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
+            style={{ backgroundColor: theme.colors.primary, borderRadius: theme.radius.button }}
+          >
+            <MdAdd className="w-5 h-5" />
+            <span>Add Employee</span>
+          </button>
+        </div>
+
+        {/* Results info */}
+        <div className="text-sm text-gray-600">
+          Showing {paginatedEmployees.length > 0 ? startIndex + 1 : 0} - {Math.min(startIndex + itemsPerPage, filteredEmployees.length)} of {filteredEmployees.length} employees
+        </div>
       </div>
 
       {/* Employees Table */}
@@ -236,8 +436,14 @@ export default function EmployeePage() {
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.length > 0 ? (
-                filteredEmployees.map((employee, index) => (
+              {loading ? (
+                <tr>
+                  <td colSpan="8" className="px-6 py-12 text-center">
+                    <p className="text-gray-500">Loading employees...</p>
+                  </td>
+                </tr>
+              ) : paginatedEmployees.length > 0 ? (
+                paginatedEmployees.map((employee, index) => (
                   <tr
                     key={employee.id}
                     className={`border-t border-gray-200 hover:bg-gray-50 transition ${
@@ -247,7 +453,7 @@ export default function EmployeePage() {
                     <td className="px-6 py-4 text-center">
                       {employee.image ? (
                         <img
-                          src={employee.image}
+                          src={getImageUrl(employee.image)}
                           alt={employee.name}
                           className="w-10 h-10 rounded-full object-cover border-2"
                           style={{ borderColor: theme.colors.primary }}
@@ -306,6 +512,13 @@ export default function EmployeePage() {
                         >
                           <MdEdit className="w-5 h-5" style={{ color: '#666' }} />
                         </button>
+                        <button
+                          onClick={() => handleDeleteEmployee(employee)}
+                          className="p-2 rounded-lg transition hover:bg-gray-200"
+                          title="Delete"
+                        >
+                          <MdDelete className="w-5 h-5" style={{ color: '#EF4444' }} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -321,6 +534,64 @@ export default function EmployeePage() {
           </table>
         </div>
       </div>
+
+      {/* Pagination Controls */}
+      {filteredEmployees.length > itemsPerPage && (
+        <div className="flex items-center justify-between bg-white p-4 rounded-lg shadow-md" style={{ backgroundColor: theme.colors.background }}>
+          <div className="text-sm text-gray-600">
+            Page {currentPage} of {totalPages}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              Previous
+            </button>
+            
+            {/* Page numbers */}
+            <div className="flex gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`px-3 py-2 rounded-lg transition ${
+                      currentPage === pageNum
+                        ? 'text-white'
+                        : 'border border-gray-300 hover:bg-gray-50'
+                    }`}
+                    style={{
+                      backgroundColor: currentPage === pageNum ? theme.colors.primary : 'transparent',
+                    }}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Employee Detail Modal */}
       {showDetailModal && selectedEmployee && (
@@ -338,7 +609,7 @@ export default function EmployeePage() {
               <div className="flex items-center gap-4">
                 {selectedEmployee.image ? (
                   <img
-                    src={selectedEmployee.image}
+                    src={getImageUrl(selectedEmployee.image)}
                     alt={selectedEmployee.name}
                     className="w-16 h-16 rounded-lg object-cover border-2"
                     style={{ borderColor: theme.colors.primary }}
@@ -390,22 +661,57 @@ export default function EmployeePage() {
                   <div className="p-4 rounded-lg" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
                     <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Emirates ID</label>
                     <p className="text-gray-900 font-medium">{selectedEmployee.emiratesId || 'Not provided'}</p>
+                    {selectedEmployee.emiratesIdImage && (
+                      <img
+                        src={getImageUrl(selectedEmployee.emiratesIdImage)}
+                        alt="Emirates ID"
+                        className="mt-2 w-40 h-24 object-cover rounded-md border"
+                      />
+                    )}
                   </div>
                   <div className="p-4 rounded-lg" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
                     <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Passport Number</label>
                     <p className="text-gray-900 font-medium">{selectedEmployee.passportNumber || 'Not provided'}</p>
+                    {selectedEmployee.passportImage && (
+                      <img
+                        src={getImageUrl(selectedEmployee.passportImage)}
+                        alt="Passport"
+                        className="mt-2 w-40 h-24 object-cover rounded-md border"
+                      />
+                    )}
                   </div>
                   <div className="p-4 rounded-lg" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
                     <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Driving License</label>
                     <p className="text-gray-900 font-medium">{selectedEmployee.drivingLicense || 'Not provided'}</p>
+                    {selectedEmployee.drivingLicenseImage && (
+                      <img
+                        src={getImageUrl(selectedEmployee.drivingLicenseImage)}
+                        alt="Driving License"
+                        className="mt-2 w-40 h-24 object-cover rounded-md border"
+                      />
+                    )}
                   </div>
                   <div className="p-4 rounded-lg" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
                     <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Labour Card</label>
                     <p className="text-gray-900 font-medium">{selectedEmployee.labourCard || 'Not provided'}</p>
+                    {selectedEmployee.labourCardImage && (
+                      <img
+                        src={getImageUrl(selectedEmployee.labourCardImage)}
+                        alt="Labour Card"
+                        className="mt-2 w-40 h-24 object-cover rounded-md border"
+                      />
+                    )}
                   </div>
                   <div className="p-4 rounded-lg col-span-2" style={{ backgroundColor: 'rgba(41, 157, 145, 0.05)' }}>
                     <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase">Insurance Documents</label>
                     <p className="text-gray-900 font-medium">{selectedEmployee.insuranceDocuments || 'Not provided'}</p>
+                    {selectedEmployee.insuranceDocumentsImage && (
+                      <img
+                        src={getImageUrl(selectedEmployee.insuranceDocumentsImage)}
+                        alt="Insurance Document"
+                        className="mt-2 w-40 h-24 object-cover rounded-md border"
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -697,6 +1003,35 @@ export default function EmployeePage() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                     placeholder="e.g., 784-1234-5678901-2"
                   />
+                  <div className="mt-3 flex flex-col items-start gap-3">
+                    {newEmployeeForm.emiratesIdImagePreview && (
+                      <div className="relative w-32 h-20">
+                        <img
+                          src={newEmployeeForm.emiratesIdImagePreview}
+                          alt="Emirates ID preview"
+                          className="w-full h-full object-cover rounded-md border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewEmployeeForm(prev => ({
+                            ...prev,
+                            emiratesIdImage: null,
+                            emiratesIdImagePreview: null,
+                          }))}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition"
+                        >
+                          <MdClose className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      name="emiratesIdImage"
+                      onChange={handleFormChange}
+                      accept="image/*"
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition cursor-pointer"
+                    />
+                  </div>
                 </div>
 
                 {/* Passport Number */}
@@ -710,6 +1045,35 @@ export default function EmployeePage() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                     placeholder="e.g., G12345678"
                   />
+                  <div className="mt-3 flex flex-col items-start gap-3">
+                    {newEmployeeForm.passportImagePreview && (
+                      <div className="relative w-32 h-20">
+                        <img
+                          src={newEmployeeForm.passportImagePreview}
+                          alt="Passport preview"
+                          className="w-full h-full object-cover rounded-md border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewEmployeeForm(prev => ({
+                            ...prev,
+                            passportImage: null,
+                            passportImagePreview: null,
+                          }))}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition"
+                        >
+                          <MdClose className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      name="passportImage"
+                      onChange={handleFormChange}
+                      accept="image/*"
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition cursor-pointer"
+                    />
+                  </div>
                 </div>
 
                 {/* Driving License */}
@@ -723,6 +1087,35 @@ export default function EmployeePage() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                     placeholder="e.g., 123456789"
                   />
+                  <div className="mt-3 flex flex-col items-start gap-3">
+                    {newEmployeeForm.drivingLicenseImagePreview && (
+                      <div className="relative w-32 h-20">
+                        <img
+                          src={newEmployeeForm.drivingLicenseImagePreview}
+                          alt="Driving license preview"
+                          className="w-full h-full object-cover rounded-md border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewEmployeeForm(prev => ({
+                            ...prev,
+                            drivingLicenseImage: null,
+                            drivingLicenseImagePreview: null,
+                          }))}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition"
+                        >
+                          <MdClose className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      name="drivingLicenseImage"
+                      onChange={handleFormChange}
+                      accept="image/*"
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition cursor-pointer"
+                    />
+                  </div>
                 </div>
 
                 {/* Labour Card */}
@@ -736,6 +1129,35 @@ export default function EmployeePage() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                     placeholder="e.g., LC-2024-123456"
                   />
+                  <div className="mt-3 flex flex-col items-start gap-3">
+                    {newEmployeeForm.labourCardImagePreview && (
+                      <div className="relative w-32 h-20">
+                        <img
+                          src={newEmployeeForm.labourCardImagePreview}
+                          alt="Labour card preview"
+                          className="w-full h-full object-cover rounded-md border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewEmployeeForm(prev => ({
+                            ...prev,
+                            labourCardImage: null,
+                            labourCardImagePreview: null,
+                          }))}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition"
+                        >
+                          <MdClose className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      name="labourCardImage"
+                      onChange={handleFormChange}
+                      accept="image/*"
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition cursor-pointer"
+                    />
+                  </div>
                 </div>
 
                 {/* Insurance Documents */}
@@ -749,6 +1171,35 @@ export default function EmployeePage() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                     placeholder="e.g., INS-2024-456789"
                   />
+                  <div className="mt-3 flex flex-col items-start gap-3">
+                    {newEmployeeForm.insuranceDocumentsImagePreview && (
+                      <div className="relative w-32 h-20">
+                        <img
+                          src={newEmployeeForm.insuranceDocumentsImagePreview}
+                          alt="Insurance document preview"
+                          className="w-full h-full object-cover rounded-md border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewEmployeeForm(prev => ({
+                            ...prev,
+                            insuranceDocumentsImage: null,
+                            insuranceDocumentsImagePreview: null,
+                          }))}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition"
+                        >
+                          <MdClose className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      name="insuranceDocumentsImage"
+                      onChange={handleFormChange}
+                      accept="image/*"
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition cursor-pointer"
+                    />
+                  </div>
                 </div>
               </div>
 

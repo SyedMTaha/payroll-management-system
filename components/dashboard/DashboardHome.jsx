@@ -2,14 +2,63 @@
 
 import { useAuth } from '@/context/AuthContext';
 import { theme } from '@/lib/theme';
+import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { collection, getDocs, query } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export default function DashboardHome() {
   const { user, userRole } = useAuth();
+  const router = useRouter();
+  const [stats, setStats] = useState({
+    totalCaptains: 0,
+    totalFleetPayments: 0,
+    totalPayments: 0,
+    totalTips: 0,
+    activeCaptains: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
-  const stats = [
+  // Fetch real data from Firestore
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        setLoading(true);
+
+        // Fetch captains
+        const captainsSnapshot = await getDocs(collection(db, 'captains'));
+        const captainsData = captainsSnapshot.docs.map(doc => doc.data());
+        const activeCaptains = captainsData.filter(c => c.qualificationStatus === 'Active').length;
+
+        // Fetch fleet payments
+        const fleetSnapshot = await getDocs(collection(db, 'fleet'));
+        const fleetData = fleetSnapshot.docs.map(doc => doc.data());
+        
+        // Calculate totals
+        const totalPayments = fleetData.reduce((sum, f) => sum + (f.totalDriverPayment || 0), 0);
+        const totalTips = fleetData.reduce((sum, f) => sum + (f.tips || 0), 0);
+
+        setStats({
+          totalCaptains: captainsData.length,
+          totalFleetPayments: fleetData.length,
+          totalPayments: totalPayments,
+          totalTips: totalTips,
+          activeCaptains: activeCaptains,
+        });
+      } catch (error) {
+        console.error('Error fetching stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []);
+
+  const statsCards = [
     {
-      title: 'Total Employees',
-      value: '0',
+      title: 'Total Captains',
+      value: loading ? '...' : stats.totalCaptains.toString(),
       icon: (
         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -18,34 +67,34 @@ export default function DashboardHome() {
       bgColor: theme.colors.primary,
     },
     {
-      title: 'Active Clients',
-      value: '0',
+      title: 'Active Captains',
+      value: loading ? '...' : stats.activeCaptains.toString(),
       icon: (
         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
-      bgColor: '#7FB3B0',
+      bgColor: theme.colors.primary,
     },
     {
-      title: 'Monthly Expenses',
-      value: 'AED 0',
+      title: 'Fleet Payments',
+      value: loading ? '...' : stats.totalFleetPayments.toString(),
       icon: (
         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
         </svg>
       ),
-      bgColor: '#5A9591',
+      bgColor: theme.colors.primary,
     },
     {
-      title: 'Total Revenue',
-      value: 'AED 0',
+      title: 'Total Payments',
+      value: loading ? '...' : `AED ${stats.totalPayments.toFixed(2)}`,
       icon: (
         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
-      bgColor: '#3D7971',
+      bgColor: theme.colors.primary,
     },
   ];
 
@@ -53,7 +102,7 @@ export default function DashboardHome() {
     <div>
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
-        {stats.map((stat, index) => (
+        {statsCards.map((stat, index) => (
           <div
             key={index}
             className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow"
@@ -76,23 +125,35 @@ export default function DashboardHome() {
       <div className="bg-white rounded-xl shadow-md p-6 mb-8" style={{ backgroundColor: theme.colors.background }}>
         <h2 className="text-xl font-bold text-gray-800 mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button className="flex items-center justify-center space-x-2 text-white px-6 py-4 rounded-lg hover:opacity-90 transition" style={{ backgroundColor: theme.colors.primary }}>
+          <button 
+            onClick={() => router.push('/dashboard/employees')}
+            className="flex items-center justify-center space-x-2 text-white px-6 py-4 rounded-lg hover:opacity-90 transition" 
+            style={{ backgroundColor: theme.colors.primary }}
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
             <span>Add Employee</span>
           </button>
-          <button className="flex items-center justify-center space-x-2 text-white px-6 py-4 rounded-lg hover:opacity-90 transition" style={{ backgroundColor: '#7FB3B0' }}>
+          <button 
+            onClick={() => router.push('/dashboard/captains')}
+            className="flex items-center justify-center space-x-2 text-white px-6 py-4 rounded-lg hover:opacity-90 transition" 
+            style={{ backgroundColor: theme.colors.primary }}
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
-            <span>Add Client</span>
+            <span>Add Captain</span>
           </button>
-          <button className="flex items-center justify-center space-x-2 text-white px-6 py-4 rounded-lg hover:opacity-90 transition" style={{ backgroundColor: '#5A9591' }}>
+          <button 
+            onClick={() => router.push('/dashboard/fleet')}
+            className="flex items-center justify-center space-x-2 text-white px-6 py-4 rounded-lg hover:opacity-90 transition" 
+            style={{ backgroundColor: theme.colors.primary }}
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
-            <span>Add Expense</span>
+            <span>Add Fleet Payment</span>
           </button>
         </div>
       </div>

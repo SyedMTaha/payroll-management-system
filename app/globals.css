@@ -12,6 +12,45 @@
   --color-error: #DC2626;
 }
 
+/* Smooth Scroll Behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom Scrollbar Styles for Webkit Browsers (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: linear-gradient(to bottom, var(--color-background), #ffffff);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--color-primary) 0%, #1f8279 100%);
+  border-radius: 10px;
+  border: 2px solid var(--color-background);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #1f8279 0%, #0f6760 100%);
+  box-shadow: 0 0 12px rgba(41, 157, 145, 0.5), inset 0 0 2px rgba(255, 255, 255, 0.3);
+  border-color: rgba(41, 157, 145, 0.2);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, #0f6760 0%, #084d43 100%);
+}
+
+/* Firefox Scrollbar */
+* {
+  scrollbar-color: var(--color-primary) var(--color-background);
+  scrollbar-width: thin;
+}
+
 /* Global Input Styles */
 input,
 select,
@@ -30,6 +69,15 @@ textarea::placeholder {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: linear-gradient(to bottom, #1a1a1a, #0a0a0a);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--color-primary) 0%, #1f8279 100%);
+    border-color: #1a1a1a;
   }
 }
 
