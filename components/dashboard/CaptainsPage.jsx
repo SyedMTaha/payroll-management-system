@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, deleteDoc, doc, query, orderBy, addDoc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, query, orderBy, addDoc, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import theme from '@/lib/theme';
-import { MdEdit, MdDelete, MdAdd, MdClose, MdVisibility } from 'react-icons/md';
+import { MdEdit, MdDelete, MdAdd, MdClose, MdVisibility, MdDownload, MdUpload } from 'react-icons/md';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
 export default function CaptainsPage() {
   const [captains, setCaptains] = useState([]);
@@ -16,6 +17,9 @@ export default function CaptainsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCaptain, setSelectedCaptain] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   const [newCaptainForm, setNewCaptainForm] = useState({
     captainId: '',
@@ -73,6 +77,125 @@ export default function CaptainsPage() {
         ...prev,
         [name]: value,
       }));
+    }
+  };
+
+  const downloadToExcel = () => {
+    try {
+      // Prepare data for Excel
+      const excelData = captains.map(captain => ({
+        'Captain ID': captain.captainId || '',
+        'Name': captain.name,
+        'City': captain.city,
+        'Day': captain.day || '',
+        'Limo': captain.limo || '',
+        'Total Order': captain.totalOrder,
+        'Captain Earning': captain.captainEarning,
+        'Available Hour': captain.availableHour,
+        'Accepted Offer': captain.acceptedOffer,
+        'Total Offer': captain.totalOffer,
+        'Acceptance Rate': captain.acceptanceRate || '',
+        'Qualification Status': captain.qualificationStatus,
+        'Amount AED': captain.amountAED,
+        'Total': captain.total,
+      }));
+
+      // Create workbook and worksheet
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Captains');
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `captains_${timestamp}.xlsx`;
+
+      // Download file
+      XLSX.writeFile(wb, filename);
+      toast.success(`Downloaded ${captains.length} captains to ${filename}`);
+    } catch (error) {
+      console.error('Error downloading Excel:', error);
+      toast.error('Failed to download Excel file');
+    }
+  };
+
+  const handleUploadExcel = async () => {
+    if (!uploadFile) {
+      toast.error('Please select a file');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      // Read the file
+      const data = await uploadFile.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+      if (jsonData.length === 0) {
+        toast.error('No data found in Excel file');
+        setUploading(false);
+        return;
+      }
+
+      // Normalize and validate data
+      const batch = writeBatch(db);
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const row of jsonData) {
+        // Normalize headers
+        const normalizedRow = {};
+        for (const [key, value] of Object.entries(row)) {
+          const lowerKey = key.toLowerCase().trim().replace(/\s+/g, '_');
+          normalizedRow[lowerKey] = value;
+        }
+
+        // Extract fields with multiple possible column names
+        const name = normalizedRow.name || normalizedRow.captain_name || '';
+        const city = normalizedRow.city || '';
+
+        if (!name || !city) {
+          errorCount++;
+          continue;
+        }
+
+        const captainData = {
+          captainId: normalizedRow.captain_id || '',
+          name: name,
+          city: city,
+          day: normalizedRow.day || '',
+          limo: normalizedRow.limo || '',
+          totalOrder: parseFloat(normalizedRow.total_order) || 0,
+          captainEarning: parseFloat(normalizedRow.captain_earning) || 0,
+          availableHour: parseFloat(normalizedRow.available_hour) || 0,
+          acceptedOffer: parseFloat(normalizedRow.accepted_offer) || 0,
+          totalOffer: parseFloat(normalizedRow.total_offer) || 0,
+          acceptanceRate: normalizedRow.acceptance_rate || '0%',
+          qualificationStatus: normalizedRow.qualification_status || 'Active',
+          amountAED: parseFloat(normalizedRow.amount_aed) || 0,
+          total: parseFloat(normalizedRow.total) || 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        const docRef = doc(collection(db, 'captains'));
+        batch.set(docRef, captainData);
+        successCount++;
+      }
+
+      // Commit batch
+      await batch.commit();
+
+      toast.success(`Successfully uploaded ${successCount} captains${errorCount > 0 ? ` (${errorCount} errors)` : ''}`);
+      setShowUploadModal(false);
+      setUploadFile(null);
+      loadCaptains();
+    } catch (error) {
+      console.error('Error uploading Excel:', error);
+      toast.error('Failed to upload Excel file');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -160,13 +283,31 @@ export default function CaptainsPage() {
           <h1 className="text-4xl font-bold" style={{ color: theme.colors.primary }}>
             Captains Management
           </h1>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
-            style={{ backgroundColor: theme.colors.primary }}
-          >
-            <MdAdd size={20} /> Add Captain
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={downloadToExcel}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
+              style={{ backgroundColor: '#10b981' }}
+              title="Download to Excel"
+            >
+              <MdDownload size={20} /> Download
+            </button>
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
+              style={{ backgroundColor: '#3b82f6' }}
+              title="Upload from Excel"
+            >
+              <MdUpload size={20} /> Upload
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
+              style={{ backgroundColor: theme.colors.primary }}
+            >
+              <MdAdd size={20} /> Add Captain
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -668,6 +809,80 @@ export default function CaptainsPage() {
                   className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Excel Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex justify-between items-center p-6 border-b" style={{ borderColor: theme.colors.primary }}>
+              <h2 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
+                Upload Captains from Excel/CSV
+              </h2>
+              <button
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setUploadFile(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <MdClose size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                <p className="font-semibold mb-2">📋 File Format Requirements (Excel/CSV):</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>Captain ID, Name*, City*, Day, Limo</li>
+                  <li>Total Order, Captain Earning, Available Hour</li>
+                  <li>Accepted Offer, Total Offer, Acceptance Rate</li>
+                  <li>Qualification Status, Amount AED, Total</li>
+                  <li className="font-semibold">* Required fields</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-2">
+                  Select Excel or CSV File
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(e) => setUploadFile(e.target.files[0])}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
+                />
+                {uploadFile && (
+                  <p className="text-sm text-gray-600 mt-2">
+                    Selected: {uploadFile.name}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setUploadFile(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  disabled={uploading}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUploadExcel}
+                  disabled={!uploadFile || uploading}
+                  className="px-4 py-2 rounded-lg text-white hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: theme.colors.primary }}
+                >
+                  {uploading ? 'Uploading...' : 'Upload'}
                 </button>
               </div>
             </div>

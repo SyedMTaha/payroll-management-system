@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, deleteDoc, doc, query, orderBy, addDoc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, query, orderBy, addDoc, writeBatch, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import theme from '@/lib/theme';
-import { MdDelete, MdAdd, MdClose, MdVisibility } from 'react-icons/md';
+import { MdDelete, MdAdd, MdClose, MdVisibility, MdDownload, MdUpload } from 'react-icons/md';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
 export default function FleetPage() {
   const [fleet, setFleet] = useState([]);
@@ -16,6 +17,11 @@ export default function FleetPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedFleet, setSelectedFleet] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [feeEdit, setFeeEdit] = useState(0);
+  const [savingFee, setSavingFee] = useState(false);
 
   const [newFleetForm, setNewFleetForm] = useState({
     limoCompany: '',
@@ -29,6 +35,7 @@ export default function FleetPage() {
     totalDriverOtherCost: 0,
     totalDriverPayment: 0,
     tips: 0,
+    pakEmirateFeeAmount: 0,
   });
 
   // Load fleet from Firestore
@@ -60,7 +67,7 @@ export default function FleetPage() {
     const { name, value } = e.target;
     
     // Parse numeric fields
-    if (['totalDriverBaseCost', 'totalDriverOtherCost', 'totalDriverPayment', 'tips'].includes(name)) {
+    if (['totalDriverBaseCost', 'totalDriverOtherCost', 'totalDriverPayment', 'tips', 'pakEmirateFeeAmount'].includes(name)) {
       setNewFleetForm(prev => ({
         ...prev,
         [name]: value === '' ? 0 : parseFloat(value) || 0,
@@ -70,6 +77,116 @@ export default function FleetPage() {
         ...prev,
         [name]: value,
       }));
+    }
+  };
+
+  const downloadToExcel = () => {
+    try {
+      // Prepare data for Excel
+      const excelData = fleet.map(f => ({
+        'Limo Company': f.limoCompany || '',
+        'Limo Company ID': f.limoCompanyId || '',
+        'Captain Name': f.captainName || '',
+        'Captain ID': f.captainId || '',
+        'Payment Date': f.paymentDate || '',
+        'Payment ID': f.paymentId || '',
+        'Payment Method': f.paymentMethod || '',
+        'Total Driver Base Cost': f.totalDriverBaseCost,
+        'Total Driver Other Cost': f.totalDriverOtherCost,
+        'Total Driver Payment': f.totalDriverPayment,
+        'Tips': f.tips,
+        'Grand Total': (f.totalDriverPayment || 0) + (f.tips || 0),
+        'PAK Emirate Fee': f.pakEmirateFeeAmount || 0,
+        'Pay to Driver': ((f.totalDriverPayment || 0) + (f.tips || 0)) - (f.pakEmirateFeeAmount || 0),
+      }));
+
+      // Create workbook and worksheet
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Fleet Payments');
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `fleet_payments_${timestamp}.xlsx`;
+
+      // Download file
+      XLSX.writeFile(wb, filename);
+      toast.success(`Downloaded ${fleet.length} fleet records to ${filename}`);
+    } catch (error) {
+      console.error('Error downloading Excel:', error);
+      toast.error('Failed to download Excel file');
+    }
+  };
+
+  const handleUploadExcel = async () => {
+    if (!uploadFile) {
+      toast.error('Please select a file');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      // Read the file
+      const data = await uploadFile.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+      if (jsonData.length === 0) {
+        toast.error('No data found in Excel file');
+        setUploading(false);
+        return;
+      }
+
+      // Normalize and validate data
+      const batch = writeBatch(db);
+      let successCount = 0;
+
+      for (const row of jsonData) {
+        // Normalize headers
+        const normalizedRow = {};
+        for (const [key, value] of Object.entries(row)) {
+          const lowerKey = key.toLowerCase().trim().replace(/\s+/g, '_');
+          normalizedRow[lowerKey] = value;
+        }
+
+        const fleetData = {
+          limoCompany: normalizedRow.limo_company || '',
+          limoCompanyId: normalizedRow.limo_company_id || '',
+          captainName: normalizedRow.captain_name || '',
+          captainId: normalizedRow.captain_id || '',
+          paymentDate: normalizedRow.payment_date || '',
+          paymentId: normalizedRow.payment_id || '',
+          paymentMethod: normalizedRow.payment_method || '',
+          totalDriverBaseCost: parseFloat(normalizedRow.total_driver_base_cost) || 0,
+          totalDriverOtherCost: parseFloat(normalizedRow.total_driver_other_cost) || 0,
+          totalDriverPayment: parseFloat(normalizedRow.total_driver_payment) || 0,
+          tips: parseFloat(normalizedRow.tips) || 0,
+          pakEmirateFeeAmount: parseFloat(normalizedRow.pak_emirate_fee) || parseFloat(normalizedRow.pak_emirate_fee_amount) || 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        const grandTotal = (fleetData.totalDriverPayment || 0) + (fleetData.tips || 0);
+        fleetData.netAfterFee = grandTotal - (fleetData.pakEmirateFeeAmount || 0);
+
+        const docRef = doc(collection(db, 'fleet'));
+        batch.set(docRef, fleetData);
+        successCount++;
+      }
+
+      // Commit batch
+      await batch.commit();
+
+      toast.success(`Successfully uploaded ${successCount} fleet records`);
+      setShowUploadModal(false);
+      setUploadFile(null);
+      loadFleet();
+    } catch (error) {
+      console.error('Error uploading Excel:', error);
+      toast.error('Failed to upload Excel file');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -84,6 +201,8 @@ export default function FleetPage() {
     try {
       const fleetData = {
         ...newFleetForm,
+        pakEmirateFeeAmount: newFleetForm.pakEmirateFeeAmount || 0,
+        netAfterFee: ((newFleetForm.totalDriverPayment || 0) + (newFleetForm.tips || 0)) - (newFleetForm.pakEmirateFeeAmount || 0),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -103,11 +222,38 @@ export default function FleetPage() {
         totalDriverOtherCost: 0,
         totalDriverPayment: 0,
         tips: 0,
+        pakEmirateFeeAmount: 0,
       });
       loadFleet();
     } catch (error) {
       console.error('Error saving fleet:', error);
       toast.error('Failed to save fleet record');
+    }
+  };
+
+  const handleSaveFee = async () => {
+    if (!selectedFleet) return;
+    const value = Number(feeEdit);
+    if (Number.isNaN(value)) {
+      toast.error('Please enter a valid number');
+      return;
+    }
+    try {
+      setSavingFee(true);
+      const docRef = doc(db, 'fleet', selectedFleet.id);
+      await updateDoc(docRef, {
+        pakEmirateFeeAmount: value,
+        updatedAt: new Date().toISOString(),
+      });
+      // Update local state and selected item
+      setFleet(prev => prev.map(f => f.id === selectedFleet.id ? { ...f, pakEmirateFeeAmount: value } : f));
+      setSelectedFleet(prev => ({ ...prev, pakEmirateFeeAmount: value }));
+      toast.success('PAK Emirate Fee updated');
+    } catch (error) {
+      console.error('Error updating fee:', error);
+      toast.error('Failed to update fee');
+    } finally {
+      setSavingFee(false);
     }
   };
 
@@ -126,6 +272,7 @@ export default function FleetPage() {
 
   const handleViewFleet = (fleetRecord) => {
     setSelectedFleet(fleetRecord);
+    setFeeEdit(fleetRecord.pakEmirateFeeAmount || 0);
     setShowDetailModal(true);
   };
 
@@ -155,13 +302,31 @@ export default function FleetPage() {
           <h1 className="text-4xl font-bold" style={{ color: theme.colors.primary }}>
             Fleet Payment Management
           </h1>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
-            style={{ backgroundColor: theme.colors.primary }}
-          >
-            <MdAdd size={20} /> Add Payment
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={downloadToExcel}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
+              style={{ backgroundColor: '#10b981' }}
+              title="Download to Excel"
+            >
+              <MdDownload size={20} /> Download
+            </button>
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
+              style={{ backgroundColor: '#3b82f6' }}
+              title="Upload from Excel"
+            >
+              <MdUpload size={20} /> Upload
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
+              style={{ backgroundColor: theme.colors.primary }}
+            >
+              <MdAdd size={20} /> Add Payment
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -197,13 +362,16 @@ export default function FleetPage() {
                 <th className="px-4 py-3 text-right text-white font-semibold text-xs">Other Cost (AED)</th>
                 <th className="px-4 py-3 text-right text-white font-semibold text-xs">Total Payment (AED)</th>
                 <th className="px-4 py-3 text-right text-white font-semibold text-xs">Tips (AED)</th>
+                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Grand Total (AED)</th>
+                <th className="px-4 py-3 text-right text-white font-semibold text-xs">PAK Emirate Fee (AED)</th>
+                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Pay to Driver (AED)</th>
                 <th className="px-4 py-3 text-center text-white font-semibold text-xs">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="12" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="15" className="px-6 py-8 text-center text-gray-500">
                     <div className="flex justify-center items-center">
                       <div className="animate-spin rounded-full h-8 w-8 border-2" style={{ borderColor: theme.colors.primary, borderTopColor: 'transparent' }}></div>
                     </div>
@@ -211,7 +379,7 @@ export default function FleetPage() {
                 </tr>
               ) : paginatedFleet.length === 0 ? (
                 <tr>
-                  <td colSpan="12" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="15" className="px-6 py-8 text-center text-gray-500">
                     No fleet records found
                   </td>
                 </tr>
@@ -229,6 +397,11 @@ export default function FleetPage() {
                     <td className="px-4 py-3 text-right text-gray-800">{fleetRecord.totalDriverOtherCost?.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">{fleetRecord.totalDriverPayment?.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right text-gray-800">{fleetRecord.tips?.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right font-bold" style={{ color: theme.colors.primary }}>
+                      {((fleetRecord.totalDriverPayment || 0) + (fleetRecord.tips || 0)).toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-800">{(fleetRecord.pakEmirateFeeAmount || 0).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-900">{(((fleetRecord.totalDriverPayment || 0) + (fleetRecord.tips || 0)) - (fleetRecord.pakEmirateFeeAmount || 0)).toFixed(2)}</td>
                     <td className="px-4 py-3 text-center flex gap-2 justify-center">
                       <button
                         onClick={() => handleViewFleet(fleetRecord)}
@@ -464,6 +637,19 @@ export default function FleetPage() {
                     placeholder="0.00"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-2">PAK Emirate Fee (AED)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="pakEmirateFeeAmount"
+                    value={newFleetForm.pakEmirateFeeAmount}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
 
               <div className="flex gap-2 justify-end pt-4">
@@ -566,6 +752,41 @@ export default function FleetPage() {
                       {selectedFleet.tips?.toFixed(2)} AED
                     </p>
                   </div>
+                  <div className="bg-teal-50 p-4 rounded-lg md:col-span-2">
+                    <p className="text-sm text-gray-700 font-medium">Grand Total (Payment + Tips)</p>
+                    <p className="text-3xl font-bold" style={{ color: theme.colors.primary }}>
+                      {((selectedFleet.totalDriverPayment || 0) + (selectedFleet.tips || 0)).toFixed(2)} AED
+                    </p>
+                  </div>
+                  <div className="bg-sky-50 p-4 rounded-lg md:col-span-2">
+                    <p className="text-sm text-gray-700 font-medium">PAK Emirate Fee</p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={feeEdit}
+                        onChange={(e) => setFeeEdit(e.target.value)}
+                        className="w-40 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
+                      />
+                      <button
+                        onClick={handleSaveFee}
+                        disabled={savingFee}
+                        className="px-4 py-2 rounded-lg text-white hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ backgroundColor: theme.colors.primary }}
+                      >
+                        {savingFee ? 'Saving...' : 'Save'}
+                      </button>
+                      <span className="text-lg font-bold text-sky-700">
+                        {(selectedFleet.pakEmirateFeeAmount || 0).toFixed(2)} AED
+                      </span>
+                    </div>
+                  </div>
+                  <div className="bg-emerald-50 p-4 rounded-lg md:col-span-2">
+                    <p className="text-sm text-gray-700 font-medium">Pay to Driver</p>
+                    <p className="text-3xl font-bold text-emerald-700">
+                      {(((selectedFleet.totalDriverPayment || 0) + (selectedFleet.tips || 0)) - (selectedFleet.pakEmirateFeeAmount || 0)).toFixed(2)} AED
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -575,6 +796,80 @@ export default function FleetPage() {
                   className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Excel Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex justify-between items-center p-6 border-b" style={{ borderColor: theme.colors.primary }}>
+              <h2 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
+                Upload Fleet from Excel/CSV
+              </h2>
+              <button
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setUploadFile(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <MdClose size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                <p className="font-semibold mb-2">📋 File Format Requirements (Excel/CSV):</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>Limo Company, Limo Company ID</li>
+                  <li>Captain Name, Captain ID</li>
+                  <li>Payment Date, Payment ID, Payment Method</li>
+                  <li>Total Driver Base Cost, Total Driver Other Cost</li>
+                  <li>Total Driver Payment, Tips, PAK Emirate Fee (optional)</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-2">
+                  Select Excel or CSV File
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(e) => setUploadFile(e.target.files[0])}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
+                />
+                {uploadFile && (
+                  <p className="text-sm text-gray-600 mt-2">
+                    Selected: {uploadFile.name}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setUploadFile(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  disabled={uploading}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUploadExcel}
+                  disabled={!uploadFile || uploading}
+                  className="px-4 py-2 rounded-lg text-white hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: theme.colors.primary }}
+                >
+                  {uploading ? 'Uploading...' : 'Upload'}
                 </button>
               </div>
             </div>
