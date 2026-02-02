@@ -20,10 +20,13 @@ export default function CaptainsPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
 
   const [newCaptainForm, setNewCaptainForm] = useState({
     captainId: '',
     name: '',
+    email: '',
     city: '',
     day: '',
     limo: '',
@@ -35,6 +38,8 @@ export default function CaptainsPage() {
     acceptanceRate: '0%',
     qualificationStatus: 'Active',
     amountAED: 0,
+    fine: 0,
+    advance: 0,
     total: 0,
   });
 
@@ -67,7 +72,7 @@ export default function CaptainsPage() {
     const { name, value } = e.target;
     
     // Parse numeric fields
-    if (['totalOrder', 'captainEarning', 'availableHour', 'acceptedOffer', 'totalOffer', 'amountAED', 'total'].includes(name)) {
+    if (['totalOrder', 'captainEarning', 'availableHour', 'acceptedOffer', 'totalOffer', 'amountAED', 'fine', 'advance', 'total'].includes(name)) {
       setNewCaptainForm(prev => ({
         ...prev,
         [name]: value === '' ? 0 : parseFloat(value) || 0,
@@ -163,6 +168,7 @@ export default function CaptainsPage() {
         const captainData = {
           captainId: normalizedRow.captain_id || '',
           name: name,
+          email: normalizedRow.email || '',
           city: city,
           day: normalizedRow.day || '',
           limo: normalizedRow.limo || '',
@@ -174,6 +180,8 @@ export default function CaptainsPage() {
           acceptanceRate: normalizedRow.acceptance_rate || '0%',
           qualificationStatus: normalizedRow.qualification_status || 'Active',
           amountAED: parseFloat(normalizedRow.amount_aed) || 0,
+          fine: parseFloat(normalizedRow.fine) || 0,
+          advance: parseFloat(normalizedRow.advance) || 0,
           total: parseFloat(normalizedRow.total) || 0,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -220,6 +228,7 @@ export default function CaptainsPage() {
       setNewCaptainForm({
         captainId: '',
         name: '',
+        email: '',
         city: '',
         day: '',
         limo: '',
@@ -231,6 +240,8 @@ export default function CaptainsPage() {
         acceptanceRate: '0%',
         qualificationStatus: 'Active',
         amountAED: 0,
+        fine: 0,
+        advance: 0,
         total: 0,
       });
       loadCaptains();
@@ -240,16 +251,21 @@ export default function CaptainsPage() {
     }
   };
 
-  const handleDeleteCaptain = async (id) => {
-    if (window.confirm('Are you sure you want to delete this captain?')) {
-      try {
-        await deleteDoc(doc(db, 'captains', id));
-        toast.success('Captain deleted successfully');
-        loadCaptains();
-      } catch (error) {
-        console.error('Error deleting captain:', error);
-        toast.error('Failed to delete captain');
-      }
+  const handleDeleteCaptain = (id) => {
+    setDeleteTargetId(id);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteDoc(doc(db, 'captains', deleteTargetId));
+      toast.success('Captain deleted successfully');
+      setShowDeleteModal(false);
+      setDeleteTargetId(null);
+      loadCaptains();
+    } catch (error) {
+      console.error('Error deleting captain:', error);
+      toast.error('Failed to delete captain');
     }
   };
 
@@ -275,100 +291,121 @@ export default function CaptainsPage() {
     setCurrentPage(1);
   }, [searchTerm]);
 
-  return (
-    <div className="p-6 bg-gray-50 min-h-screen" style={{ backgroundColor: theme.colors.background }}>
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold" style={{ color: theme.colors.primary }}>
-            Captains Management
-          </h1>
-          <div className="flex gap-2">
-            <button
-              onClick={downloadToExcel}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
-              style={{ backgroundColor: '#10b981' }}
-              title="Download to Excel"
-            >
-              <MdDownload size={20} /> Download
-            </button>
-            <button
-              onClick={() => setShowUploadModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
-              style={{ backgroundColor: '#3b82f6' }}
-              title="Upload from Excel"
-            >
-              <MdUpload size={20} /> Upload
-            </button>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
-              style={{ backgroundColor: theme.colors.primary }}
-            >
-              <MdAdd size={20} /> Add Captain
-            </button>
-          </div>
-        </div>
+  // Handle Escape key and outside click for modals
+  useEffect(() => {
+    if (!showDetailModal) return;
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') {
+        setShowDetailModal(false);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [showDetailModal]);
 
+  return (
+    <div className="max-w-7xl mx-auto px-4 pr-8 space-y-6">
+      {/* Header with Search and Actions */}
+      <div className="flex flex-col gap-4">
         {/* Search Bar */}
-        <div className="mb-6">
+        <div className="flex-1">
           <input
             type="text"
-            placeholder="Search by name, city, or captain ID..."
+            placeholder="🔍 Search by name, city, or captain ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
-            style={{ focusRingColor: theme.colors.primary }}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
           />
         </div>
 
-        {/* Results Info */}
-        <div className="mb-4 text-sm text-gray-900 font-medium">
-          Showing {paginatedCaptains.length > 0 ? startIndex + 1 : 0}-{Math.min(startIndex + itemsPerPage, filteredCaptains.length)} of {filteredCaptains.length} captains
+        {/* Action Buttons */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={downloadToExcel}
+              className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
+              style={{ backgroundColor: '#10b981', borderRadius: theme.radius.button }}
+              title="Download to Excel"
+            >
+              <MdDownload className="w-5 h-5" />
+              <span>Download</span>
+            </button>
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
+              style={{ backgroundColor: '#3b82f6', borderRadius: theme.radius.button }}
+              title="Upload from Excel/CSV"
+            >
+              <MdUpload className="w-5 h-5" />
+              <span>Upload</span>
+            </button>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
+            style={{ backgroundColor: theme.colors.primary, borderRadius: theme.radius.button }}
+          >
+            <MdAdd className="w-5 h-5" />
+            <span>Add Captain</span>
+          </button>
         </div>
 
-        {/* Table */}
-        <div className="bg-white rounded-lg shadow-md overflow-x-auto">
-          <table className="w-full">
+        {/* Results Info */}
+        <div className="text-sm text-gray-600">
+          Showing {paginatedCaptains.length > 0 ? startIndex + 1 : 0} - {Math.min(startIndex + itemsPerPage, filteredCaptains.length)} of {filteredCaptains.length} captains
+        </div>
+      </div>
+
+      {/* Captains Table */}
+      <div className="bg-white rounded-xl shadow-md overflow-hidden" style={{ backgroundColor: theme.colors.background }}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1200px]">
             <thead>
-              <tr style={{ backgroundColor: theme.colors.primary }}>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Captain ID</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Name</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">City</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Day</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Limo</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Total Orders</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Captain Earning (AED)</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Available Hours</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Accepted Offers</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Total Offers</th>
-                <th className="px-4 py-3 text-center text-white font-semibold text-xs">Acceptance Rate</th>
-                <th className="px-4 py-3 text-center text-white font-semibold text-xs">Status</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Amount AED</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Total</th>
-                <th className="px-4 py-3 text-center text-white font-semibold text-xs">Actions</th>
+              <tr style={{ backgroundColor: 'rgba(41, 157, 145, 0.1)' }}>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Captain ID</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Name</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Email</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">City</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Day</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Limo</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Total Orders</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Captain Earning (AED)</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Available Hours</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Accepted Offers</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Total Offers</th>
+                <th className="px-6 py-4 text-center text-sm font-semibold text-gray-800">Acceptance Rate</th>
+                <th className="px-6 py-4 text-center text-sm font-semibold text-gray-800">Status</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Amount AED</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Fine (AED)</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Advance (AED)</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Total</th>
+                <th className="px-6 py-4 text-center text-sm font-semibold text-gray-800">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="15" className="px-6 py-8 text-center text-gray-500">
-                    <div className="flex justify-center items-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-2" style={{ borderColor: theme.colors.primary, borderTopColor: 'transparent' }}></div>
-                    </div>
+                  <td colSpan="18" className="px-6 py-12 text-center">
+                    <p className="text-gray-500">Loading captains...</p>
                   </td>
                 </tr>
               ) : paginatedCaptains.length === 0 ? (
                 <tr>
-                  <td colSpan="15" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="18" className="px-6 py-12 text-center text-gray-500">
                     No captains found
                   </td>
                 </tr>
               ) : (
-                paginatedCaptains.map(captain => (
-                  <tr key={captain.id} className="border-t hover:bg-gray-50 transition text-xs text-gray-900">
+                paginatedCaptains.map((captain, index) => (
+                  <tr
+                    key={captain.id}
+                    className={`border-t border-gray-200 hover:bg-gray-50 transition ${
+                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                    }`}
+                  >
                     <td className="px-4 py-3 text-gray-800">{captain.captainId || '-'}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{captain.name}</td>
+                    <td className="px-4 py-3 text-gray-800">{captain.email || '-'}</td>
                     <td className="px-4 py-3 text-gray-800">{captain.city}</td>
                     <td className="px-4 py-3 text-gray-800">{captain.day || '-'}</td>
                     <td className="px-4 py-3 text-gray-800">{captain.limo || '-'}</td>
@@ -389,22 +426,26 @@ export default function CaptainsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">{captain.amountAED?.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-red-600">{captain.fine?.toFixed(2) || '0.00'}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-orange-600">{captain.advance?.toFixed(2) || '0.00'}</td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">{captain.total?.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-center flex gap-2 justify-center">
-                      <button
-                        onClick={() => handleViewCaptain(captain)}
-                        className="p-1.5 hover:bg-blue-100 rounded transition"
-                        title="View Details"
-                      >
-                        <MdVisibility size={16} color="#3b82f6" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteCaptain(captain.id)}
-                        className="p-1.5 hover:bg-red-100 rounded transition"
-                        title="Delete"
-                      >
-                        <MdDelete size={16} color="#ef4444" />
-                      </button>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex gap-2 justify-center">
+                        <button
+                          onClick={() => handleViewCaptain(captain)}
+                          className="p-1.5 hover:bg-blue-100 rounded transition"
+                          title="View Details"
+                        >
+                          <MdVisibility size={16} color="#3b82f6" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCaptain(captain.id)}
+                          className="p-1.5 hover:bg-red-100 rounded transition"
+                          title="Delete"
+                        >
+                          <MdDelete size={16} color="#ef4444" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -412,77 +453,114 @@ export default function CaptainsPage() {
             </tbody>
           </table>
         </div>
+      </div>
 
-        {/* Pagination Controls */}
-        {filteredCaptains.length > itemsPerPage && (
-          <div className="flex items-center justify-between bg-white p-4 rounded-lg shadow-md mt-4">
-            <div className="text-sm text-gray-900 font-medium">
-              Page {currentPage} of {totalPages}
+      {/* Pagination Controls */}
+      {filteredCaptains.length > itemsPerPage && (
+        <div className="flex items-center justify-between bg-white p-4 rounded-lg shadow-md mt-4">
+          <div className="text-sm text-gray-900 font-medium">
+            Page {currentPage} of {totalPages}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-900 font-medium"
+            >
+              Previous
+            </button>
+
+            {/* Page numbers */}
+            <div className="flex gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`px-3 py-2 rounded-lg transition font-medium ${
+                      currentPage === pageNum
+                        ? 'text-white'
+                        : 'border border-gray-300 hover:bg-gray-50 text-gray-900'
+                    }`}
+                    style={{
+                      backgroundColor: currentPage === pageNum ? theme.colors.primary : 'transparent',
+                    }}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-900 font-medium"
-              >
-                Previous
-              </button>
 
-              {/* Page numbers */}
-              <div className="flex gap-1">
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
-                  }
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`px-3 py-2 rounded-lg transition font-medium ${
-                        currentPage === pageNum
-                          ? 'text-white'
-                          : 'border border-gray-300 hover:bg-gray-50 text-gray-900'
-                      }`}
-                      style={{
-                        backgroundColor: currentPage === pageNum ? theme.colors.primary : 'transparent',
-                      }}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-900 font-medium"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteModal(false)}>
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800">Delete Captain</h2>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="text-black hover:text-gray-700"
+              >
+                <MdClose className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-gray-700">Are you sure you want to delete this captain? This action cannot be undone.</p>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 text-gray-700 px-6 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="flex-1 text-white px-6 py-2 rounded-lg hover:opacity-90 transition font-medium"
+                  style={{ backgroundColor: '#ef4444' }}
+                >
+                  Delete
+                </button>
               </div>
-
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-900 font-medium"
-              >
-                Next
-              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Add Captain Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowAddModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center p-6 border-b" style={{ borderColor: theme.colors.primary }}>
               <h2 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
                 Add New Captain
               </h2>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-black hover:text-gray-700"
               >
                 <MdClose size={24} />
               </button>
@@ -514,6 +592,18 @@ export default function CaptainsPage() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
                     placeholder="Captain name"
                     required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-2">Email</label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={newCaptainForm.email}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
+                    placeholder="captain@example.com"
                   />
                 </div>
 
@@ -657,6 +747,32 @@ export default function CaptainsPage() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-2">Fine (AED)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="fine"
+                    value={newCaptainForm.fine}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-2">Advance (AED)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="advance"
+                    value={newCaptainForm.advance}
+                    onChange={handleFormChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">Total</label>
                   <input
                     type="number"
@@ -674,7 +790,7 @@ export default function CaptainsPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-black"
                 >
                   Cancel
                 </button>
@@ -693,15 +809,15 @@ export default function CaptainsPage() {
 
       {/* Detail Modal */}
       {showDetailModal && selectedCaptain && (
-        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowDetailModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center p-6 border-b" style={{ borderColor: theme.colors.primary }}>
               <h2 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
                 Captain Details
               </h2>
               <button
                 onClick={() => setShowDetailModal(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-black hover:text-gray-700"
               >
                 <MdClose size={24} />
               </button>
@@ -717,6 +833,10 @@ export default function CaptainsPage() {
                 <div>
                   <p className="text-sm text-gray-700 font-medium">Name</p>
                   <p className="text-lg font-semibold text-gray-900">{selectedCaptain.name}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-700 font-medium">Email</p>
+                  <p className="text-lg font-semibold text-gray-900">{selectedCaptain.email || '-'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-700 font-medium">City</p>
@@ -806,7 +926,7 @@ export default function CaptainsPage() {
               <div className="flex gap-2 justify-end pt-4">
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-black"
                 >
                   Close
                 </button>
@@ -818,8 +938,8 @@ export default function CaptainsPage() {
 
       {/* Upload Excel Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => { setShowUploadModal(false); setUploadFile(null); }}>
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center p-6 border-b" style={{ borderColor: theme.colors.primary }}>
               <h2 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
                 Upload Captains from Excel/CSV
@@ -829,7 +949,7 @@ export default function CaptainsPage() {
                   setShowUploadModal(false);
                   setUploadFile(null);
                 }}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-black hover:text-gray-700"
               >
                 <MdClose size={24} />
               </button>
@@ -837,13 +957,13 @@ export default function CaptainsPage() {
 
             <div className="p-6 space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                <p className="font-semibold mb-2">📋 File Format Requirements (Excel/CSV):</p>
+                <p className="font-semibold mb-2">File Format Requirements (Excel/CSV):</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
                   <li>Captain ID, Name*, City*, Day, Limo</li>
                   <li>Total Order, Captain Earning, Available Hour</li>
                   <li>Accepted Offer, Total Offer, Acceptance Rate</li>
                   <li>Qualification Status, Amount AED, Total</li>
-                  <li className="font-semibold">* Required fields</li>
+                  <li className="font-semibold">Required fields</li>
                 </ul>
               </div>
 

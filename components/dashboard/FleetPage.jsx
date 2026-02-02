@@ -7,6 +7,7 @@ import theme from '@/lib/theme';
 import { MdDelete, MdAdd, MdClose, MdVisibility, MdDownload, MdUpload } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
+import { getCompanyLogo, getAvailableCompanies, DEFAULT_LOGO } from '@/lib/companyLogos';
 
 export default function FleetPage() {
   const [fleet, setFleet] = useState([]);
@@ -22,6 +23,8 @@ export default function FleetPage() {
   const [uploading, setUploading] = useState(false);
   const [feeEdit, setFeeEdit] = useState(0);
   const [savingFee, setSavingFee] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
 
   const [newFleetForm, setNewFleetForm] = useState({
     limoCompany: '',
@@ -257,16 +260,21 @@ export default function FleetPage() {
     }
   };
 
-  const handleDeleteFleet = async (id) => {
-    if (window.confirm('Are you sure you want to delete this fleet record?')) {
-      try {
-        await deleteDoc(doc(db, 'fleet', id));
-        toast.success('Fleet record deleted successfully');
-        loadFleet();
-      } catch (error) {
-        console.error('Error deleting fleet:', error);
-        toast.error('Failed to delete fleet record');
-      }
+  const handleDeleteFleet = (id) => {
+    setDeleteTargetId(id);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteDoc(doc(db, 'fleet', deleteTargetId));
+      toast.success('Fleet record deleted successfully');
+      setShowDeleteModal(false);
+      setDeleteTargetId(null);
+      loadFleet();
+    } catch (error) {
+      console.error('Error deleting fleet:', error);
+      toast.error('Failed to delete fleet record');
     }
   };
 
@@ -295,128 +303,148 @@ export default function FleetPage() {
   }, [searchTerm]);
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen" style={{ backgroundColor: theme.colors.background }}>
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold" style={{ color: theme.colors.primary }}>
-            Fleet Payment Management
-          </h1>
-          <div className="flex gap-2">
-            <button
-              onClick={downloadToExcel}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
-              style={{ backgroundColor: '#10b981' }}
-              title="Download to Excel"
-            >
-              <MdDownload size={20} /> Download
-            </button>
-            <button
-              onClick={() => setShowUploadModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
-              style={{ backgroundColor: '#3b82f6' }}
-              title="Upload from Excel"
-            >
-              <MdUpload size={20} /> Upload
-            </button>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white hover:shadow-lg transition"
-              style={{ backgroundColor: theme.colors.primary }}
-            >
-              <MdAdd size={20} /> Add Payment
-            </button>
-          </div>
-        </div>
-
+    <div className="max-w-7xl mx-auto px-4 pr-8 space-y-6">
+      {/* Header with Search and Actions */}
+      <div className="flex flex-col gap-4">
         {/* Search Bar */}
-        <div className="mb-6">
+        <div className="flex-1">
           <input
             type="text"
-            placeholder="Search by captain name, company, payment ID, or captain ID..."
+            placeholder="🔍 Search by captain name, company, payment ID, or captain ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
-            style={{ focusRingColor: theme.colors.primary }}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
           />
         </div>
 
-        {/* Results Info */}
-        <div className="mb-4 text-sm text-gray-900 font-medium">
-          Showing {paginatedFleet.length > 0 ? startIndex + 1 : 0}-{Math.min(startIndex + itemsPerPage, filteredFleet.length)} of {filteredFleet.length} records
+        {/* Action Buttons */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={downloadToExcel}
+              className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
+              style={{ backgroundColor: '#10b981', borderRadius: theme.radius.button }}
+              title="Download to Excel"
+            >
+              <MdDownload className="w-5 h-5" />
+              <span>Download</span>
+            </button>
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
+              style={{ backgroundColor: '#3b82f6', borderRadius: theme.radius.button }}
+              title="Upload from Excel/CSV"
+            >
+              <MdUpload className="w-5 h-5" />
+              <span>Upload</span>
+            </button>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
+            style={{ backgroundColor: theme.colors.primary, borderRadius: theme.radius.button }}
+          >
+            <MdAdd className="w-5 h-5" />
+            <span>Add Payment</span>
+          </button>
         </div>
 
-        {/* Table */}
-        <div className="bg-white rounded-lg shadow-md overflow-x-auto">
-          <table className="w-full">
+        {/* Results Info */}
+        <div className="text-sm text-gray-600">
+          Showing {paginatedFleet.length > 0 ? startIndex + 1 : 0} - {Math.min(startIndex + itemsPerPage, filteredFleet.length)} of {filteredFleet.length} records
+        </div>
+      </div>
+
+      {/* Fleet Table */}
+      <div className="bg-white rounded-xl shadow-md overflow-hidden" style={{ backgroundColor: theme.colors.background }}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1200px]">
             <thead>
-              <tr style={{ backgroundColor: theme.colors.primary }}>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Limo Company</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Company ID</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Captain Name</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Captain ID</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Payment Date</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Payment ID</th>
-                <th className="px-4 py-3 text-left text-white font-semibold text-xs">Method</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Base Cost (AED)</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Other Cost (AED)</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Total Payment (AED)</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Tips (AED)</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Grand Total (AED)</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">PAK Emirate Fee (AED)</th>
-                <th className="px-4 py-3 text-right text-white font-semibold text-xs">Pay to Driver (AED)</th>
-                <th className="px-4 py-3 text-center text-white font-semibold text-xs">Actions</th>
+              <tr style={{ backgroundColor: 'rgba(41, 157, 145, 0.1)' }}>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Logo</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Limo Company</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Company ID</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Captain Name</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Captain ID</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Payment Date</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Payment ID</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Method</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Base Cost (AED)</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Other Cost (AED)</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Total Payment (AED)</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Tips (AED)</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Grand Total (AED)</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">PAK Emirate Fee (AED)</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-800">Pay to Driver (AED)</th>
+                <th className="px-6 py-4 text-center text-sm font-semibold text-gray-800">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="15" className="px-6 py-8 text-center text-gray-500">
-                    <div className="flex justify-center items-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-2" style={{ borderColor: theme.colors.primary, borderTopColor: 'transparent' }}></div>
-                    </div>
+                  <td colSpan="16" className="px-6 py-12 text-center">
+                    <p className="text-gray-500">Loading fleet records...</p>
                   </td>
                 </tr>
               ) : paginatedFleet.length === 0 ? (
                 <tr>
-                  <td colSpan="15" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="16" className="px-6 py-12 text-center text-gray-500">
                     No fleet records found
                   </td>
                 </tr>
               ) : (
-                paginatedFleet.map(fleetRecord => (
-                  <tr key={fleetRecord.id} className="border-t hover:bg-gray-50 transition text-xs text-gray-900">
-                    <td className="px-4 py-3 text-gray-800">{fleetRecord.limoCompany || '-'}</td>
-                    <td className="px-4 py-3 text-gray-800">{fleetRecord.limoCompanyId || '-'}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{fleetRecord.captainName || '-'}</td>
-                    <td className="px-4 py-3 text-gray-800">{fleetRecord.captainId || '-'}</td>
-                    <td className="px-4 py-3 text-gray-800">{fleetRecord.paymentDate || '-'}</td>
-                    <td className="px-4 py-3 text-gray-800">{fleetRecord.paymentId || '-'}</td>
-                    <td className="px-4 py-3 text-gray-800">{fleetRecord.paymentMethod || '-'}</td>
-                    <td className="px-4 py-3 text-right text-gray-800">{fleetRecord.totalDriverBaseCost?.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-right text-gray-800">{fleetRecord.totalDriverOtherCost?.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">{fleetRecord.totalDriverPayment?.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-right text-gray-800">{fleetRecord.tips?.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-right font-bold" style={{ color: theme.colors.primary }}>
+                paginatedFleet.map((fleetRecord, index) => (
+                  <tr
+                    key={fleetRecord.id}
+                    className={`border-t border-gray-200 hover:bg-gray-50 transition ${
+                      index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                    }`}
+                  >
+                    <td className="px-6 py-4 text-center">
+                      <img
+                        src={getCompanyLogo(fleetRecord.limoCompany)}
+                        alt={fleetRecord.limoCompany || 'Company Logo'}
+                        className="w-10 h-10 object-contain"
+                        onError={(e) => {
+                          e.target.src = DEFAULT_LOGO;
+                        }}
+                      />
+                    </td>
+                    <td className="px-6 py-4 text-gray-800">{fleetRecord.limoCompany || '-'}</td>
+                    <td className="px-6 py-4 text-gray-800">{fleetRecord.limoCompanyId || '-'}</td>
+                    <td className="px-6 py-4 font-medium text-gray-900">{fleetRecord.captainName || '-'}</td>
+                    <td className="px-6 py-4 text-gray-800">{fleetRecord.captainId || '-'}</td>
+                    <td className="px-6 py-4 text-gray-800">{fleetRecord.paymentDate || '-'}</td>
+                    <td className="px-6 py-4 text-gray-800">{fleetRecord.paymentId || '-'}</td>
+                    <td className="px-6 py-4 text-gray-800">{fleetRecord.paymentMethod || '-'}</td>
+                    <td className="px-6 py-4 text-right text-gray-800">{fleetRecord.totalDriverBaseCost?.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-right text-gray-800">{fleetRecord.totalDriverOtherCost?.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-right font-semibold text-gray-900">{fleetRecord.totalDriverPayment?.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-right text-gray-800">{fleetRecord.tips?.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-right font-bold" style={{ color: theme.colors.primary }}>
                       {((fleetRecord.totalDriverPayment || 0) + (fleetRecord.tips || 0)).toFixed(2)}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-800">{(fleetRecord.pakEmirateFeeAmount || 0).toFixed(2)}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">{(((fleetRecord.totalDriverPayment || 0) + (fleetRecord.tips || 0)) - (fleetRecord.pakEmirateFeeAmount || 0)).toFixed(2)}</td>
-                    <td className="px-4 py-3 text-center flex gap-2 justify-center">
-                      <button
-                        onClick={() => handleViewFleet(fleetRecord)}
-                        className="p-1.5 hover:bg-blue-100 rounded transition"
-                        title="View Details"
-                      >
-                        <MdVisibility size={16} color="#3b82f6" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteFleet(fleetRecord.id)}
-                        className="p-1.5 hover:bg-red-100 rounded transition"
-                        title="Delete"
-                      >
-                        <MdDelete size={16} color="#ef4444" />
-                      </button>
+                    <td className="px-6 py-4 text-right text-gray-800">{(fleetRecord.pakEmirateFeeAmount || 0).toFixed(2)}</td>
+                    <td className="px-6 py-4 text-right font-semibold text-gray-900">{(((fleetRecord.totalDriverPayment || 0) + (fleetRecord.tips || 0)) - (fleetRecord.pakEmirateFeeAmount || 0)).toFixed(2)}</td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex gap-2 justify-center">
+                        <button
+                          onClick={() => handleViewFleet(fleetRecord)}
+                          className="p-2 hover:bg-blue-100 rounded-lg transition"
+                          style={{ borderRadius: theme.radius.button }}
+                          title="View Details"
+                        >
+                          <MdVisibility className="w-5 h-5" style={{ color: '#3b82f6' }} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteFleet(fleetRecord.id)}
+                          className="p-2 hover:bg-red-100 rounded-lg transition"
+                          style={{ borderRadius: theme.radius.button }}
+                          title="Delete"
+                        >
+                          <MdDelete className="w-5 h-5" style={{ color: '#ef4444' }} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -424,65 +452,105 @@ export default function FleetPage() {
             </tbody>
           </table>
         </div>
+      </div>
 
-        {/* Pagination Controls */}
-        {filteredFleet.length > itemsPerPage && (
-          <div className="flex items-center justify-between bg-white p-4 rounded-lg shadow-md mt-4">
-            <div className="text-sm text-gray-900 font-medium">
-              Page {currentPage} of {totalPages}
+      {/* Pagination Controls */}
+      {filteredFleet.length > itemsPerPage && (
+        <div className="flex items-center justify-between bg-white px-6 py-4 rounded-xl shadow-md">
+          <div className="text-sm text-gray-600">
+            Page {currentPage} of {totalPages}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-700"
+              style={{ borderRadius: theme.radius.button }}
+            >
+              Previous
+            </button>
+
+            {/* Page numbers */}
+            <div className="flex gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`px-3 py-2 rounded-lg transition font-medium ${
+                      currentPage === pageNum
+                        ? 'text-white'
+                        : 'border border-gray-300 hover:bg-gray-50 text-gray-700'
+                    }`}
+                    style={{
+                      backgroundColor: currentPage === pageNum ? theme.colors.primary : 'transparent',
+                      borderRadius: theme.radius.button
+                    }}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-900 font-medium"
-              >
-                Previous
-              </button>
 
-              {/* Page numbers */}
-              <div className="flex gap-1">
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
-                  }
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`px-3 py-2 rounded-lg transition font-medium ${
-                        currentPage === pageNum
-                          ? 'text-white'
-                          : 'border border-gray-300 hover:bg-gray-50 text-gray-900'
-                      }`}
-                      style={{
-                        backgroundColor: currentPage === pageNum ? theme.colors.primary : 'transparent',
-                      }}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-700"
+              style={{ borderRadius: theme.radius.button }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteModal(false)}>
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800">Delete Fleet Record</h2>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="text-black hover:text-gray-700"
+              >
+                <MdClose className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-gray-700">Are you sure you want to delete this fleet record? This action cannot be undone.</p>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 text-gray-700 px-6 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="flex-1 text-white px-6 py-2 rounded-lg hover:opacity-90 transition font-medium"
+                  style={{ backgroundColor: '#ef4444' }}
+                >
+                  Delete
+                </button>
               </div>
-
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-900 font-medium"
-              >
-                Next
-              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Add Fleet Modal */}
       {showAddModal && (
@@ -502,16 +570,36 @@ export default function FleetPage() {
 
             <form onSubmit={saveFleetToFirestore} className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-900 mb-2">Limo Company</label>
-                  <input
-                    type="text"
-                    name="limoCompany"
-                    value={newFleetForm.limoCompany}
-                    onChange={handleFormChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
-                    placeholder="Limo company name"
-                  />
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">Limo Company <span className="text-red-500">*</span></label>
+                  <div className="flex gap-3 items-end">
+                    <div className="flex-1">
+                      <select
+                        name="limoCompany"
+                        value={newFleetForm.limoCompany}
+                        onChange={handleFormChange}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2"
+                      >
+                        <option value="">-- Select a Company --</option>
+                        {getAvailableCompanies().map((company) => (
+                          <option key={company} value={company}>
+                            {company}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {newFleetForm.limoCompany && (
+                      <img
+                        src={getCompanyLogo(newFleetForm.limoCompany)}
+                        alt={newFleetForm.limoCompany}
+                        className="w-12 h-12 object-contain border border-gray-300 rounded p-1"
+                        onError={(e) => {
+                          e.target.src = DEFAULT_LOGO;
+                        }}
+                      />
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Select from available companies with logos</p>
                 </div>
 
                 <div>
@@ -656,7 +744,7 @@ export default function FleetPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-black"
                 >
                   Cancel
                 </button>
@@ -690,12 +778,26 @@ export default function FleetPage() {
             </div>
 
             <div className="p-6 space-y-6">
+              {/* Company Logo */}
+              {selectedFleet.limoCompany && (
+                <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <img
+                    src={getCompanyLogo(selectedFleet.limoCompany)}
+                    alt={selectedFleet.limoCompany}
+                    className="w-16 h-16 object-contain"
+                    onError={(e) => {
+                      e.target.src = DEFAULT_LOGO;
+                    }}
+                  />
+                  <div>
+                    <p className="text-sm text-gray-600">Company</p>
+                    <p className="text-lg font-semibold text-gray-900">{selectedFleet.limoCompany}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Basic Info */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-700 font-medium">Limo Company</p>
-                  <p className="text-lg font-semibold text-gray-900">{selectedFleet.limoCompany || '-'}</p>
-                </div>
                 <div>
                   <p className="text-sm text-gray-700 font-medium">Company ID</p>
                   <p className="text-lg font-semibold text-gray-900">{selectedFleet.limoCompanyId || '-'}</p>
@@ -793,7 +895,7 @@ export default function FleetPage() {
               <div className="flex gap-2 justify-end pt-4">
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-black"
                 >
                   Close
                 </button>
@@ -824,7 +926,7 @@ export default function FleetPage() {
 
             <div className="p-6 space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                <p className="font-semibold mb-2">📋 File Format Requirements (Excel/CSV):</p>
+                <p className="font-semibold mb-2">File Format Requirements (Excel/CSV):</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
                   <li>Limo Company, Limo Company ID</li>
                   <li>Captain Name, Captain ID</li>

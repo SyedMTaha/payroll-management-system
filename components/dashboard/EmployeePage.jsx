@@ -23,6 +23,7 @@ export default function EmployeePage() {
   const [newEmployeeForm, setNewEmployeeForm] = useState({
     name: '',
     role: '',
+    vehicleType: '',
     paymentType: 'Monthly',
     salary: '',
     client: '',
@@ -302,6 +303,7 @@ export default function EmployeePage() {
       const newEmployee = {
         name: newEmployeeForm.name,
         role: newEmployeeForm.role,
+        vehicleType: newEmployeeForm.vehicleType,
         paymentType: newEmployeeForm.paymentType,
         salary: newEmployeeForm.salary,
         client: newEmployeeForm.client,
@@ -336,6 +338,7 @@ export default function EmployeePage() {
       setNewEmployeeForm({
         name: '',
         role: '',
+        vehicleType: '',
         paymentType: 'Monthly',
         salary: '',
         client: '',
@@ -864,6 +867,21 @@ export default function EmployeePage() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                   placeholder="e.g., Delivery Driver, Accountant"
                 />
+              </div>
+
+              {/* Vehicle Type */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-800 mb-2">Vehicle Type</label>
+                <select
+                  name="vehicleType"
+                  value={newEmployeeForm.vehicleType}
+                  onChange={handleFormChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                >
+                  <option value="">Select vehicle type</option>
+                  <option value="Bike">Bike</option>
+                  <option value="Car">Car</option>
+                </select>
               </div>
 
               {/* Payment Type */}

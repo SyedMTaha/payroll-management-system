@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { MdCheck, MdClose, MdCheckCircle, MdPendingActions } from 'react-icons/md';
+import { useEffect, useState, useRef } from 'react';
+import { MdCheck, MdClose, MdCheckCircle, MdPendingActions, MdReceiptLong, MdEmail, MdDownload } from 'react-icons/md';
+import { jsPDF } from 'jspdf';
 import { theme } from '@/lib/theme';
 import toast from 'react-hot-toast';
 
@@ -82,6 +83,23 @@ export default function PayrollPage() {
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showPaidModal, setShowPaidModal] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [invoiceEmail, setInvoiceEmail] = useState('');
+  const [sendingInvoice, setSendingInvoice] = useState(false);
+  const stampCacheRef = useRef(null);
+
+  const closeInvoiceModal = () => setShowInvoiceModal(false);
+
+  useEffect(() => {
+    if (!showInvoiceModal) return;
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') {
+        closeInvoiceModal();
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [showInvoiceModal]);
 
   const tabConfig = {
     weekly: { label: 'Weekly Payments', key: 'weekly' },
@@ -110,6 +128,121 @@ export default function PayrollPage() {
   const handleMarkAsPaid = (payment) => {
     setSelectedPayment(payment);
     setShowPaidModal(true);
+  };
+
+  const handleOpenInvoice = (payment) => {
+    setSelectedPayment(payment);
+    setInvoiceEmail('');
+    setShowInvoiceModal(true);
+  };
+
+  const loadStampDataUrl = async () => {
+    if (stampCacheRef.current) return stampCacheRef.current;
+    try {
+      const response = await fetch('/assets/stamp/stamp.png');
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      stampCacheRef.current = dataUrl;
+      return dataUrl;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const buildInvoicePdf = async (payment) => {
+    const doc = new jsPDF();
+    const invoiceDate = new Date().toLocaleDateString();
+    const fileTitle = 'Payroll Invoice';
+
+    const stampDataUrl = await loadStampDataUrl();
+    if (stampDataUrl) {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const imgWidth = 120;
+      const imgHeight = 120;
+      const x = (pageWidth - imgWidth) / 2;
+      const y = (pageHeight - imgHeight) / 2;
+      if (doc.setGState && doc.GState) {
+        const gState = new doc.GState({ opacity: 0.15 });
+        doc.setGState(gState);
+      }
+      doc.addImage(stampDataUrl, 'PNG', x, y, imgWidth, imgHeight);
+      if (doc.setGState && doc.GState) {
+        const resetState = new doc.GState({ opacity: 1 });
+        doc.setGState(resetState);
+      }
+    }
+
+    doc.setFontSize(18);
+    doc.text(fileTitle, 14, 20);
+
+    doc.setFontSize(11);
+    doc.text(`Invoice Date: ${invoiceDate}`, 14, 30);
+    doc.text(`Invoice ID: INV-${payment.id}`, 14, 36);
+
+    doc.setFontSize(12);
+    doc.text(`Employee: ${payment.employeeName}`, 14, 48);
+    doc.text(`Payment Type: ${payment.paymentType}`, 14, 56);
+
+    doc.setFontSize(11);
+    doc.text(`Calculated Amount: AED ${payment.calculatedAmount.toLocaleString()}`, 14, 68);
+    doc.text(`Advance Deduction: AED ${payment.advanceDeduction.toLocaleString()}`, 14, 76);
+    doc.text(`Final Payable: AED ${payment.finalPayable.toLocaleString()}`, 14, 84);
+    doc.text(`Status: ${payment.status}`, 14, 92);
+
+    return doc;
+  };
+
+  const handleDownloadInvoice = async (payment) => {
+    const doc = await buildInvoicePdf(payment);
+    const safeName = payment.employeeName.replace(/\s+/g, '_');
+    doc.save(`invoice_${safeName}_${payment.id}.pdf`);
+  };
+
+  const handleSendInvoice = async () => {
+    if (!invoiceEmail.trim()) {
+      toast.error('Please enter a recipient email address');
+      return;
+    }
+    if (!selectedPayment) return;
+
+    try {
+      setSendingInvoice(true);
+      const doc = await buildInvoicePdf(selectedPayment);
+      const dataUri = doc.output('datauristring');
+      const base64 = dataUri.split(',')[1];
+      const safeName = selectedPayment.employeeName.replace(/\s+/g, '_');
+      const fileName = `invoice_${safeName}_${selectedPayment.id}.pdf`;
+
+      const response = await fetch('/api/send-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: invoiceEmail,
+          payment: selectedPayment,
+          pdfBase64: base64,
+          fileName,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send invoice');
+      }
+
+      toast.success('Invoice sent successfully');
+      setShowInvoiceModal(false);
+    } catch (error) {
+      console.error('Send invoice error:', error);
+      toast.error('Failed to send invoice');
+    } finally {
+      setSendingInvoice(false);
+    }
   };
 
   const confirmMarkAsPaid = () => {
@@ -269,26 +402,69 @@ export default function PayrollPage() {
                               >
                                 Mark as Paid
                               </button>
+                              <button
+                                onClick={() => handleOpenInvoice(payment)}
+                                className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-xs font-semibold whitespace-nowrap hover:opacity-80"
+                                style={{
+                                  backgroundColor: 'transparent',
+                                  color: '#3B82F6',
+                                  border: '1.5px solid #3B82F6',
+                                }}
+                                title="Invoice"
+                              >
+                                <MdReceiptLong className="w-4 h-4 inline-block mr-1" />
+                                Invoice
+                              </button>
                             </>
                           )}
                           {payment.status === 'Approved' && (
-                            <button
-                              onClick={() => handleMarkAsPaid(payment)}
-                              className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-xs font-semibold whitespace-nowrap hover:opacity-80"
-                              style={{
-                                backgroundColor: 'transparent',
-                                color: theme.colors.primary,
-                                border: `1.5px solid ${theme.colors.primary}`,
-                              }}
-                            >
-                              Mark as Paid
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleMarkAsPaid(payment)}
+                                className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-xs font-semibold whitespace-nowrap hover:opacity-80"
+                                style={{
+                                  backgroundColor: 'transparent',
+                                  color: theme.colors.primary,
+                                  border: `1.5px solid ${theme.colors.primary}`,
+                                }}
+                              >
+                                Mark as Paid
+                              </button>
+                              <button
+                                onClick={() => handleOpenInvoice(payment)}
+                                className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-xs font-semibold whitespace-nowrap hover:opacity-80"
+                                style={{
+                                  backgroundColor: 'transparent',
+                                  color: '#3B82F6',
+                                  border: '1.5px solid #3B82F6',
+                                }}
+                                title="Invoice"
+                              >
+                                <MdReceiptLong className="w-4 h-4 inline-block mr-1" />
+                                Invoice
+                              </button>
+                            </>
                           )}
                           {payment.status === 'Paid' && (
-                            <span className="px-3 py-1.5 text-green-600 text-xs font-semibold flex items-center gap-1 whitespace-nowrap">
-                              <MdCheckCircle className="w-4 h-4" />
-                              Completed
-                            </span>
+                            <>
+                              <span className="px-3 py-1.5 text-green-600 text-xs font-semibold flex items-center gap-1 whitespace-nowrap">
+                                <MdCheckCircle className="w-4 h-4" />
+                                Completed
+                              </span>
+                              <button
+                                onClick={() => handleOpenInvoice(payment)}
+                                className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-xs font-semibold whitespace-nowrap hover:opacity-80"
+                                style={{
+                                  backgroundColor: 'transparent',
+                                  color: '#3B82F6',
+                                  border: '1.5px solid #3B82F6',
+                                }}
+                                title="Invoice"
+                              >
+                                <MdReceiptLong className="w-4 h-4 inline-block mr-1" />
+                                Invoice
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -412,6 +588,71 @@ export default function PayrollPage() {
                   className="flex-1 text-gray-700 px-6 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition font-medium"
                 >
                   Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Modal */}
+      {showInvoiceModal && selectedPayment && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={closeInvoiceModal}
+        >
+          <div
+            className="bg-white rounded-xl shadow-lg max-w-md w-full"
+            style={{ backgroundColor: theme.colors.background }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800">Invoice</h2>
+              <button
+                onClick={closeInvoiceModal}
+                className="p-2 hover:bg-gray-200 rounded-lg transition"
+              >
+                <MdClose className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                <p className="text-gray-700 text-sm">Employee</p>
+                <p className="text-gray-900 font-semibold">{selectedPayment.employeeName}</p>
+                <p className="text-gray-700 text-sm">Final Payable</p>
+                <p className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
+                  AED {selectedPayment.finalPayable.toLocaleString()}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-800 mb-2">Send To Email</label>
+                <input
+                  type="email"
+                  value={invoiceEmail}
+                  onChange={(e) => setInvoiceEmail(e.target.value)}
+                  placeholder="example@company.com"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => handleDownloadInvoice(selectedPayment)}
+                  className="flex-1 text-white px-6 py-2 rounded-lg hover:opacity-90 transition font-medium flex items-center justify-center gap-2"
+                  style={{ backgroundColor: theme.colors.primary }}
+                >
+                  <MdDownload className="w-5 h-5" />
+                  Download PDF
+                </button>
+                <button
+                  onClick={handleSendInvoice}
+                  disabled={sendingInvoice}
+                  className="flex-1 text-gray-700 px-6 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <MdEmail className="w-5 h-5" />
+                  {sendingInvoice ? 'Sending...' : 'Send Email'}
                 </button>
               </div>
             </div>
