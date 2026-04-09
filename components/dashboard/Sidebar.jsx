@@ -4,54 +4,65 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { MdDashboard, MdPeople, MdAttachMoney, MdReceiptLong, MdReceipt, MdBusiness, MdSettings, MdLogout, MdDirectionsCar } from 'react-icons/md';
+import {
+  FiGrid,
+  FiUsers,
+  FiDollarSign,
+  FiFileText,
+  FiCreditCard,
+  FiBriefcase,
+  FiSettings,
+  FiLogOut,
+  FiTruck,
+  FiUserCheck,
+} from 'react-icons/fi';
 import { theme } from '@/lib/theme';
 
 const navItems = [
   {
     name: 'Dashboard',
     href: '/dashboard',
-    icon: MdDashboard,
+    icon: FiGrid,
   },
   {
     name: 'Employees',
     href: '/dashboard/employees',
-    icon: MdPeople,
+    icon: FiUsers,
   },
   {
     name: 'Captains',
     href: '/dashboard/captains',
-    icon: MdPeople,
+    icon: FiUserCheck,
   },
   {
     name: 'Fleet',
     href: '/dashboard/fleet',
-    icon: MdDirectionsCar,
+    icon: FiTruck,
   },
   {
     name: 'Payroll',
     href: '/dashboard/payroll',
-    icon: MdAttachMoney,
+    icon: FiDollarSign,
   },
   {
     name: 'Companies',
     href: '/dashboard/companies',
-    icon: MdBusiness,
+    icon: FiBriefcase,
   },
   {
     name: 'Bills',
     href: '/dashboard/bills',
-    icon: MdReceiptLong,
+    icon: FiFileText,
   },
   {
     name: 'Expenses',
     href: '/dashboard/expenses',
-    icon: MdReceipt,
+    icon: FiCreditCard,
   },
   {
     name: 'Settings',
     href: '/dashboard/settings',
-    icon: MdSettings,
+    icon: FiSettings,
   },
 ];
 
@@ -93,7 +104,10 @@ export default function Sidebar() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 min-h-0 px-4 py-6 space-y-2 overflow-y-auto">
+          <nav
+            className="sidebar-nav-scroll flex-1 min-h-0 px-4 py-6 space-y-2 overflow-y-auto"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
@@ -137,7 +151,7 @@ export default function Sidebar() {
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#444444'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
             >
-              <MdLogout className="w-5 h-5" />
+              <FiLogOut className="w-5 h-5" />
               <span>Logout</span>
             </button>
           </div>
@@ -151,6 +165,12 @@ export default function Sidebar() {
           className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
         />
       )}
+
+      <style jsx global>{`
+        .sidebar-nav-scroll::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
     </>
   );
 }

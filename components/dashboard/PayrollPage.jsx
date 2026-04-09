@@ -5,6 +5,8 @@ import { MdCheck, MdClose, MdCheckCircle, MdPendingActions, MdReceiptLong, MdEma
 import { jsPDF } from 'jspdf';
 import { theme } from '@/lib/theme';
 import toast from 'react-hot-toast';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export default function PayrollPage() {
   const [activeTab, setActiveTab] = useState('weekly');
@@ -86,6 +88,7 @@ export default function PayrollPage() {
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [invoiceEmail, setInvoiceEmail] = useState('');
   const [sendingInvoice, setSendingInvoice] = useState(false);
+  const [employeesMap, setEmployeesMap] = useState({});
   const stampCacheRef = useRef(null);
 
   const closeInvoiceModal = () => setShowInvoiceModal(false);
@@ -101,6 +104,27 @@ export default function PayrollPage() {
     return () => document.removeEventListener('keydown', handleEsc);
   }, [showInvoiceModal]);
 
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'employees'),
+      (snapshot) => {
+        const map = {};
+        snapshot.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data?.name) {
+            map[data.name.trim().toLowerCase()] = data;
+          }
+        });
+        setEmployeesMap(map);
+      },
+      (error) => {
+        console.error('Failed to load employees for payroll:', error);
+      }
+    );
+
+    return () => unsub();
+  }, []);
+
   const tabConfig = {
     weekly: { label: 'Weekly Payments', key: 'weekly' },
     monthly: { label: 'Monthly Payments', key: 'monthly' },
@@ -108,6 +132,37 @@ export default function PayrollPage() {
   };
 
   const currentPayments = payments[activeTab];
+
+  const formatJoinDate = (rawDate) => {
+    if (!rawDate) return 'N/A';
+
+    let date;
+    if (typeof rawDate?.toDate === 'function') {
+      date = rawDate.toDate();
+    } else if (rawDate instanceof Date) {
+      date = rawDate;
+    } else {
+      date = new Date(rawDate);
+    }
+
+    if (Number.isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const displayedPayments = currentPayments.map((payment) => {
+    const employeeKey = payment.employeeName?.trim()?.toLowerCase();
+    const employee = employeesMap[employeeKey] || null;
+
+    return {
+      ...payment,
+      vehicleType: employee?.vehicleType || 'N/A',
+      joiningDate: formatJoinDate(employee?.createdAt),
+    };
+  });
 
   const handleApprovePayment = (payment) => {
     setSelectedPayment(payment);
@@ -271,9 +326,9 @@ export default function PayrollPage() {
 
   const getTotalStats = () => {
     const stats = {
-      total: currentPayments.reduce((sum, p) => sum + p.finalPayable, 0),
-      approved: currentPayments.filter(p => p.status === 'Approved' || p.status === 'Paid').reduce((sum, p) => sum + p.finalPayable, 0),
-      pending: currentPayments.filter(p => p.status === 'Pending').reduce((sum, p) => sum + p.finalPayable, 0),
+      total: displayedPayments.reduce((sum, p) => sum + p.finalPayable, 0),
+      approved: displayedPayments.filter(p => p.status === 'Approved' || p.status === 'Paid').reduce((sum, p) => sum + p.finalPayable, 0),
+      pending: displayedPayments.filter(p => p.status === 'Pending').reduce((sum, p) => sum + p.finalPayable, 0),
     };
     return stats;
   };
@@ -327,6 +382,8 @@ export default function PayrollPage() {
             <thead>
               <tr style={{ backgroundColor: 'rgba(41, 157, 145, 0.1)' }}>
                 <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Employee Name</th>
+                <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Date Joined</th>
+                <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Vehicle Type</th>
                 <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Payment Type</th>
                 <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Calculated Amount</th>
                 <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Advance Deduction</th>
@@ -336,8 +393,8 @@ export default function PayrollPage() {
               </tr>
             </thead>
             <tbody>
-              {currentPayments.length > 0 ? (
-                currentPayments.map((payment, index) => {
+              {displayedPayments.length > 0 ? (
+                displayedPayments.map((payment, index) => {
                   const statusBadge = getStatusBadge(payment.status);
                   const StatusIcon = statusBadge.icon;
                   return (
@@ -348,6 +405,8 @@ export default function PayrollPage() {
                       }`}
                     >
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-gray-800">{payment.employeeName}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-700">{payment.joiningDate}</td>
+                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-700">{payment.vehicleType}</td>
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-700">
                         <span
                           className="px-2 sm:px-3 py-1 rounded-full text-xs font-semibold text-white whitespace-nowrap inline-block"
@@ -473,7 +532,7 @@ export default function PayrollPage() {
               })
             ) : (
               <tr>
-                <td colSpan="7" className="px-6 py-12 text-center">
+                <td colSpan="9" className="px-6 py-12 text-center">
                   <p className="text-gray-500">No payment records for this period</p>
                 </td>
               </tr>
