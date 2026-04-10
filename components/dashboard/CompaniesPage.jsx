@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MdAdd, MdClose, MdVisibility, MdBusiness, MdDelete } from 'react-icons/md';
+import { MdAdd, MdClose, MdBusiness, MdDelete } from 'react-icons/md';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { theme } from '@/lib/theme';
@@ -26,8 +26,6 @@ const getInitialCompanyForm = () => ({
   name: '',
   logoFile: null,
   logoPreview: null,
-  monthlyCharge: '',
-  projects: [getInitialProject()],
 });
 
 export default function CompaniesPage() {
@@ -39,8 +37,13 @@ export default function CompaniesPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [companyToDelete, setCompanyToDelete] = useState(null);
   const [newCompanyForm, setNewCompanyForm] = useState(getInitialCompanyForm());
+  const [editCompanyForm, setEditCompanyForm] = useState({
+    name: '',
+    projects: [getInitialProject()],
+  });
   const [isAddingCompany, setIsAddingCompany] = useState(false);
   const [isDeletingCompany, setIsDeletingCompany] = useState(false);
+  const [isSavingCompanyDetails, setIsSavingCompanyDetails] = useState(false);
 
   const normalizeProjectMembers = (members) => {
     const sourceMembers = Array.isArray(members)
@@ -140,6 +143,22 @@ export default function CompaniesPage() {
   };
 
   const handleViewCompany = (company) => {
+    const editableProjects = getCompanyProjects(company);
+
+    setEditCompanyForm({
+      name: company.name || '',
+      projects: editableProjects.length > 0
+        ? editableProjects.map((project) => ({
+            projectType: project.projectType || '',
+            members: (Array.isArray(project.members) ? project.members : []).map((member) => ({
+              memberName: member.memberName || '',
+              memberId: member.memberId || '',
+              fee: member.fee || '',
+            })),
+          }))
+        : [getInitialProject()],
+    });
+
     setSelectedCompany(company);
     setShowDetailModal(true);
   };
@@ -156,8 +175,13 @@ export default function CompaniesPage() {
     }));
   };
 
+  const handleEditCompanyFormChange = (e) => {
+    const { name, value } = e.target;
+    setEditCompanyForm((prev) => ({ ...prev, [name]: value }));
+  };
+
   const handleProjectChange = (index, field, value) => {
-    setNewCompanyForm((prev) => ({
+    setEditCompanyForm((prev) => ({
       ...prev,
       projects: prev.projects.map((project, i) =>
         i === index ? { ...project, [field]: value } : project
@@ -166,7 +190,7 @@ export default function CompaniesPage() {
   };
 
   const handleProjectMemberChange = (projectIndex, memberIndex, field, value) => {
-    setNewCompanyForm((prev) => ({
+    setEditCompanyForm((prev) => ({
       ...prev,
       projects: prev.projects.map((project, pIdx) => {
         if (pIdx !== projectIndex) return project;
@@ -183,7 +207,7 @@ export default function CompaniesPage() {
   };
 
   const addMemberToProject = (projectIndex) => {
-    setNewCompanyForm((prev) => ({
+    setEditCompanyForm((prev) => ({
       ...prev,
       projects: prev.projects.map((project, index) =>
         index === projectIndex
@@ -194,7 +218,7 @@ export default function CompaniesPage() {
   };
 
   const removeMemberFromProject = (projectIndex, memberIndex) => {
-    setNewCompanyForm((prev) => ({
+    setEditCompanyForm((prev) => ({
       ...prev,
       projects: prev.projects.map((project, index) => {
         if (index !== projectIndex) return project;
@@ -210,14 +234,14 @@ export default function CompaniesPage() {
   };
 
   const addProjectField = () => {
-    setNewCompanyForm((prev) => ({
+    setEditCompanyForm((prev) => ({
       ...prev,
       projects: [...prev.projects, getInitialProject()],
     }));
   };
 
   const removeProjectField = (index) => {
-    setNewCompanyForm((prev) => ({
+    setEditCompanyForm((prev) => ({
       ...prev,
       projects: prev.projects.filter((_, i) => i !== index),
     }));
@@ -367,45 +391,8 @@ export default function CompaniesPage() {
       return;
     }
 
-    const cleanedProjects = newCompanyForm.projects
-      .map((project) => ({
-        projectType: project.projectType.trim(),
-        members: (Array.isArray(project.members) ? project.members : [])
-          .map((member) => ({
-            memberName: String(member.memberName || '').trim(),
-            memberId: String(member.memberId || '').trim(),
-            fee: Number(member.fee) || 0,
-          }))
-          .filter((member) => member.memberName || member.memberId || member.fee > 0),
-      }))
-      .filter((project) => project.projectType);
-
-    if (cleanedProjects.length === 0) {
-      toast.error('Add at least one project type');
-      return;
-    }
-
-    const hasInvalidMember = cleanedProjects.some((project) =>
-      project.members.some((member) => !member.memberName || !member.memberId || member.fee <= 0)
-    );
-
-    if (hasInvalidMember) {
-      toast.error('Each member must include name, ID, and fee');
-      return;
-    }
-
-    const hasProjectWithoutMembers = cleanedProjects.some((project) => project.members.length === 0);
-    if (hasProjectWithoutMembers) {
-      toast.error('Each project must have at least one member');
-      return;
-    }
-
     try {
       setIsAddingCompany(true);
-      const monthlyCharge = parseFloat(newCompanyForm.monthlyCharge) || 0;
-      const assignedEmployees = [
-        ...new Set(cleanedProjects.flatMap((project) => project.members.map((member) => member.memberName))),
-      ];
 
       const companyName = newCompanyForm.name.trim();
       const logoFile = newCompanyForm.logoFile;
@@ -416,9 +403,9 @@ export default function CompaniesPage() {
         logoFileId: '',
         logoUrl: '',
         logoUploadStatus: logoFile ? 'uploading' : 'completed',
-        projects: cleanedProjects,
-        monthlyCharge,
-        assignedEmployees,
+        projects: [],
+        monthlyCharge: 0,
+        assignedEmployees: [],
         paymentStatus: 'Pending',
         invoices: [],
         paymentHistory: [],
@@ -438,6 +425,64 @@ export default function CompaniesPage() {
       toast.error(err?.message || 'Failed to add company');
     } finally {
       setIsAddingCompany(false);
+    }
+  };
+
+  const handleSaveCompanyDetails = async () => {
+    if (!selectedCompany?.id || isSavingCompanyDetails) return;
+
+    if (!editCompanyForm.name.trim()) {
+      toast.error('Company name is required');
+      return;
+    }
+
+    const cleanedProjects = editCompanyForm.projects
+      .map((project) => ({
+        projectType: project.projectType.trim(),
+        members: (Array.isArray(project.members) ? project.members : [])
+          .map((member) => ({
+            memberName: String(member.memberName || '').trim(),
+            memberId: String(member.memberId || '').trim(),
+            fee: Number(member.fee) || 0,
+          }))
+          .filter((member) => member.memberName || member.memberId || member.fee > 0),
+      }))
+      .filter((project) => project.projectType);
+
+    const hasInvalidMember = cleanedProjects.some((project) =>
+      project.members.some((member) => !member.memberName || !member.memberId || member.fee <= 0)
+    );
+
+    if (hasInvalidMember) {
+      toast.error('Each member must include name, ID, and fee');
+      return;
+    }
+
+    const hasProjectWithoutMembers = cleanedProjects.some((project) => project.members.length === 0);
+    if (hasProjectWithoutMembers) {
+      toast.error('Each project must have at least one member');
+      return;
+    }
+
+    const assignedEmployees = [
+      ...new Set(cleanedProjects.flatMap((project) => project.members.map((member) => member.memberName))),
+    ];
+
+    try {
+      setIsSavingCompanyDetails(true);
+      await updateDoc(doc(db, 'companies', selectedCompany.id), {
+        name: editCompanyForm.name.trim(),
+        projects: cleanedProjects,
+        assignedEmployees,
+        updatedAt: Date.now(),
+      });
+      toast.success('Company details updated');
+      setShowDetailModal(false);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to update company details');
+    } finally {
+      setIsSavingCompanyDetails(false);
     }
   };
 
@@ -582,7 +627,8 @@ export default function CompaniesPage() {
                       key={company.id}
                       className={`border-t border-gray-200 hover:bg-gray-50 transition ${
                         index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                      }`}
+                      } cursor-pointer`}
+                      onClick={() => handleViewCompany(company)}
                     >
                       <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-gray-800">
                         <div className="flex items-center gap-3">
@@ -630,14 +676,20 @@ export default function CompaniesPage() {
                       <td className="px-3 sm:px-6 py-3 sm:py-4">
                         <div className="flex items-center justify-center gap-2">
                           <button
-                            onClick={() => handleViewCompany(company)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewCompany(company);
+                            }}
                             className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-white text-xs font-semibold hover:opacity-90 whitespace-nowrap"
                             style={{ backgroundColor: theme.colors.primary }}
                           >
-                            View Details
+                            Edit
                           </button>
                           <button
-                            onClick={() => requestDeleteCompany(company)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              requestDeleteCompany(company);
+                            }}
                             className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-white text-xs font-semibold hover:opacity-90 whitespace-nowrap"
                             style={{ backgroundColor: theme.colors.error }}
                             title="Delete Company"
@@ -694,8 +746,14 @@ export default function CompaniesPage() {
 
             <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-80px)]">
               {(() => {
-                const projects = getCompanyProjects(selectedCompany);
-                const totalMembers = getCompanyMemberCount(selectedCompany);
+                const projects = editCompanyForm.projects;
+                const totalMembers = new Set(
+                  projects.flatMap((project) =>
+                    (Array.isArray(project.members) ? project.members : [])
+                      .map((member) => member.memberId || member.memberName)
+                      .filter(Boolean)
+                  )
+                ).size;
                 const invoices = selectedCompany.invoices || [];
                 const paymentHistory = selectedCompany.paymentHistory || [];
 
@@ -704,7 +762,17 @@ export default function CompaniesPage() {
               {/* Company Info */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-gray-800 mb-3">Company Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm text-gray-600 mb-1">Company Name</label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={editCompanyForm.name}
+                      onChange={handleEditCompanyFormChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    />
+                  </div>
                   <div>
                     <p className="text-sm text-gray-600">Total Projects</p>
                     <p className="font-semibold text-gray-900">{projects.length}</p>
@@ -713,51 +781,98 @@ export default function CompaniesPage() {
                     <p className="text-sm text-gray-600">Team Members</p>
                     <p className="font-semibold text-gray-900">{totalMembers}</p>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Monthly Charge</p>
-                    <p className="font-semibold" style={{ color: theme.colors.primary }}>
-                      AED {(Number(selectedCompany.monthlyCharge) || 0).toLocaleString()}
-                    </p>
-                  </div>
                 </div>
               </div>
 
               {/* Projects */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-3">Projects</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-gray-800">Projects</h3>
+                  <button
+                    type="button"
+                    onClick={addProjectField}
+                    className="text-xs font-semibold px-3 py-1 rounded-lg text-white"
+                    style={{ backgroundColor: theme.colors.primary }}
+                  >
+                    Add Project
+                  </button>
+                </div>
                 <div className="space-y-3">
                   {projects.length > 0 ? (
                     projects.map((project, idx) => (
                       <div key={idx} className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-sm text-gray-600">Project Type</p>
-                        <p className="font-semibold text-gray-900">{project.projectType}</p>
+                        <label className="block text-sm text-gray-600 mb-1">Project Type</label>
+                        <input
+                          type="text"
+                          value={project.projectType}
+                          onChange={(e) => handleProjectChange(idx, 'projectType', e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                          placeholder="Project name"
+                        />
 
-                        <p className="text-sm text-gray-600 mt-3 mb-2">Members</p>
-                          {Array.isArray(project.members) && project.members.length > 0 ? (
-                          <div className="overflow-x-auto">
-                            <table className="w-full min-w-105 rounded-lg overflow-hidden">
-                              <thead>
-                                <tr className="bg-gray-200">
-                                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-800">Name</th>
-                                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-800">Member ID</th>
-                                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-800">Fee (AED)</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {project.members.map((member, memberIdx) => (
-                                  <tr key={`${idx}-${memberIdx}`} className="border-t border-gray-200">
-                                    <td className="px-3 py-2 text-sm text-gray-700">{member.memberName || '-'}</td>
-                                    <td className="px-3 py-2 text-sm text-gray-700">{member.memberId || '-'}</td>
-                                    <td className="px-3 py-2 text-sm font-semibold" style={{ color: theme.colors.primary }}>
-                                      AED {(Number(member.fee) || 0).toLocaleString()}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : (
-                          <p className="text-gray-500 text-sm">No members added</p>
+                        <div className="flex items-center justify-between mt-3 mb-2">
+                          <p className="text-sm text-gray-600">Members</p>
+                          <button
+                            type="button"
+                            onClick={() => addMemberToProject(idx)}
+                            className="text-[11px] font-semibold px-2 py-1 rounded-md text-white"
+                            style={{ backgroundColor: theme.colors.primary }}
+                          >
+                            Add Member
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {(Array.isArray(project.members) ? project.members : []).map((member, memberIdx) => (
+                            <div key={`${idx}-${memberIdx}`} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <input
+                                type="text"
+                                value={member.memberName}
+                                onChange={(e) => handleProjectMemberChange(idx, memberIdx, 'memberName', e.target.value)}
+                                placeholder="Name"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                              />
+                              <input
+                                type="text"
+                                value={member.memberId}
+                                onChange={(e) => handleProjectMemberChange(idx, memberIdx, 'memberId', e.target.value)}
+                                placeholder="ID"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                              />
+                              <div className="flex gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={member.fee}
+                                  onChange={(e) => handleProjectMemberChange(idx, memberIdx, 'fee', e.target.value)}
+                                  placeholder="Fee"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                />
+                                {(Array.isArray(project.members) ? project.members.length : 0) > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeMemberFromProject(idx, memberIdx)}
+                                    className="h-10 w-10 flex items-center justify-center rounded-lg bg-red-600 text-white hover:bg-red-700 transition"
+                                    title="Remove member"
+                                    aria-label="Remove member"
+                                  >
+                                    <MdClose className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {projects.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeProjectField(idx)}
+                            className="mt-3 text-xs font-semibold px-3 py-1 rounded-lg text-white"
+                            style={{ backgroundColor: theme.colors.error }}
+                          >
+                            Remove Project
+                          </button>
                         )}
                       </div>
                     ))
@@ -767,6 +882,18 @@ export default function CompaniesPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleSaveCompanyDetails}
+                  disabled={isSavingCompanyDetails}
+                  className="text-white px-5 py-2 rounded-lg font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: theme.colors.primary }}
+                >
+                  {isSavingCompanyDetails ? 'Saving...' : 'Save Changes'}
+                </button>
               </div>
 
               {/* Monthly Invoices */}
@@ -953,117 +1080,6 @@ export default function CompaniesPage() {
                     className="mt-3 w-16 h-16 rounded-lg object-cover border border-gray-300"
                   />
                 )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Monthly Charge (AED)</label>
-                <input
-                  type="number"
-                  name="monthlyCharge"
-                  value={newCompanyForm.monthlyCharge}
-                  onChange={handleFormChange}
-                  placeholder="Enter amount"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                  min="0"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">Projects *</label>
-                  <button
-                    type="button"
-                    onClick={addProjectField}
-                    className="text-xs font-semibold px-3 py-1 rounded-lg text-white"
-                    style={{ backgroundColor: theme.colors.primary }}
-                  >
-                    Add Project
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {newCompanyForm.projects.map((project, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-3 space-y-3">
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">Project Type</label>
-                        <input
-                          type="text"
-                          value={project.projectType}
-                          onChange={(e) => handleProjectChange(index, 'projectType', e.target.value)}
-                          placeholder="e.g., Project-1"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                        />
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="block text-xs text-gray-600">Member Details (Name, ID, Fee)</label>
-                          <button
-                            type="button"
-                            onClick={() => addMemberToProject(index)}
-                            className="text-[11px] font-semibold px-2 py-1 rounded-md text-white"
-                            style={{ backgroundColor: theme.colors.primary }}
-                          >
-                            Add Member
-                          </button>
-                        </div>
-
-                        <div className="space-y-2">
-                          {(Array.isArray(project.members) ? project.members : []).map((member, memberIndex) => (
-                            <div key={memberIndex} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                              <input
-                                type="text"
-                                value={member.memberName}
-                                onChange={(e) => handleProjectMemberChange(index, memberIndex, 'memberName', e.target.value)}
-                                placeholder="Name"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                              />
-                              <input
-                                type="text"
-                                value={member.memberId}
-                                onChange={(e) => handleProjectMemberChange(index, memberIndex, 'memberId', e.target.value)}
-                                placeholder="ID"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                              />
-                              <div className="flex gap-2">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={member.fee}
-                                  onChange={(e) => handleProjectMemberChange(index, memberIndex, 'fee', e.target.value)}
-                                  placeholder="Fee"
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                                />
-                                {(Array.isArray(project.members) ? project.members.length : 0) > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeMemberFromProject(index, memberIndex)}
-                                    className="px-2 py-2 rounded-lg text-white"
-                                    style={{ backgroundColor: theme.colors.error }}
-                                    title="Remove member"
-                                  >
-                                    X
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {newCompanyForm.projects.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeProjectField(index)}
-                          className="text-xs font-semibold px-3 py-1 rounded-lg text-white"
-                          style={{ backgroundColor: theme.colors.error }}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
               </div>
 
               <div className="flex gap-3 pt-4">
