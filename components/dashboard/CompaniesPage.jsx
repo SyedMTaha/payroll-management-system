@@ -44,6 +44,7 @@ export default function CompaniesPage() {
   const [isAddingCompany, setIsAddingCompany] = useState(false);
   const [isDeletingCompany, setIsDeletingCompany] = useState(false);
   const [isSavingCompanyDetails, setIsSavingCompanyDetails] = useState(false);
+  const [activeProjectByCompany, setActiveProjectByCompany] = useState({});
 
   const normalizeProjectMembers = (members) => {
     const sourceMembers = Array.isArray(members)
@@ -165,6 +166,13 @@ export default function CompaniesPage() {
 
   const handleAddCompany = () => {
     setShowAddModal(true);
+  };
+
+  const handleSelectProject = (companyId, projectIndex) => {
+    setActiveProjectByCompany((prev) => ({
+      ...prev,
+      [companyId]: projectIndex,
+    }));
   };
 
   const handleFormChange = (e) => {
@@ -592,125 +600,169 @@ export default function CompaniesPage() {
         </div>
       </div>
 
-      {/* Companies Table */}
-      <div className="bg-white rounded-xl shadow-md overflow-hidden" style={{ backgroundColor: theme.colors.background }}>
-        {/* Header inside card */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 sm:p-6 border-b" style={{ borderColor: theme.colors.border.light }}>
-          <h2 className="text-2xl font-bold text-gray-800">Client Companies</h2>
+      {/* Companies Hierarchy Overview */}
+      <div
+        className="bg-white rounded-xl shadow-md p-4 sm:p-6 overflow-hidden"
+        style={{ backgroundColor: theme.colors.background }}
+      >
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
+          <h2 className="text-2xl font-bold text-slate-800 tracking-wide">Companies Overview</h2>
           <button
             onClick={handleAddCompany}
             className="flex items-center justify-center space-x-2 text-white px-6 py-2 rounded-lg hover:opacity-90 transition"
             style={{ backgroundColor: theme.colors.primary, borderRadius: theme.radius.button }}
           >
             <MdAdd className="w-5 h-5" />
-            <span>Add Company</span>
+            <span>Create Company</span>
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr style={{ backgroundColor: 'rgba(41, 157, 145, 0.1)' }}>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Company</th>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Projects</th>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Team Members</th>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Monthly Charge</th>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-semibold text-gray-800">Payment Status</th>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 text-center text-xs sm:text-sm font-semibold text-gray-800">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {companyGridRows.length > 0 ? (
-                companyGridRows.map((row, index) => {
-                  const { company, projects, membersCount, memberPreview, monthlyCharge, paymentStatus } = row;
-                  return (
-                    <tr
-                      key={company.id}
-                      className={`border-t border-gray-200 hover:bg-gray-50 transition ${
-                        index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                      } cursor-pointer`}
-                      onClick={() => handleViewCompany(company)}
-                    >
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-gray-800">
-                        <div className="flex items-center gap-3">
-                          {company.logoUrl ? (
-                            <img src={company.logoUrl} alt={company.name} className="w-9 h-9 rounded-lg object-cover border border-gray-200" />
-                          ) : (
-                            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(41, 157, 145, 0.1)' }}>
-                              <MdBusiness className="w-5 h-5" style={{ color: theme.colors.primary }} />
+
+        {companyGridRows.length > 0 ? (
+          <div className="pb-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-5">
+              {companyGridRows.map((row) => {
+                const { company, projects } = row;
+                const selectedProjectIndex =
+                  typeof activeProjectByCompany[company.id] === 'number' && activeProjectByCompany[company.id] < projects.length
+                    ? activeProjectByCompany[company.id]
+                    : 0;
+                const activeProject = projects[selectedProjectIndex] || null;
+                const activeMembers = Array.isArray(activeProject?.members) ? activeProject.members : [];
+
+                return (
+                  <div
+                    key={company.id}
+                    className="rounded-2xl bg-white p-4 shadow-md flex flex-col min-h-130"
+                  >
+                    <div className="flex justify-center">
+                      <div
+                        className="h-32 w-32 rounded-full border-[6px] bg-white shadow-inner flex items-center justify-center overflow-hidden"
+                        style={{
+                          borderColor: `${theme.colors.primary}33`,
+                          boxShadow: `inset 0 0 20px ${theme.colors.primary}22`,
+                        }}
+                      >
+                        {company.logoUrl ? (
+                          <img src={company.logoUrl} alt={company.name} className="w-18 h-18 rounded-full object-cover" />
+                        ) : (
+                          <MdBusiness className="w-9 h-9" style={{ color: theme.colors.primary }} />
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="mt-3 text-center font-bold text-slate-800 uppercase text-sm tracking-wide truncate" title={company.name}>
+                      {company.name}
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 mt-3 text-[11px]">
+                      <div className="rounded-md bg-slate-50 border border-slate-200 px-2 py-1 text-slate-700">
+                        Projects: <span className="font-semibold">{projects.length}</span>
+                      </div>
+                      {/*
+                      <div className="col-span-2 rounded-md bg-cyan-50 border border-cyan-100 px-2 py-1 text-slate-700">
+                        Monthly: <span className="font-semibold">AED {monthlyCharge.toLocaleString()}</span>
+                      </div>
+                      */}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3 mt-4">
+                      <button
+                        type="button"
+                        onClick={() => handleViewCompany(company)}
+                        className="col-span-2 text-xs font-semibold rounded-lg px-2 py-2 text-white hover:opacity-90 transition"
+                        style={{ backgroundColor: theme.colors.primary }}
+                      >
+                        + Create Project
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => requestDeleteCompany(company)}
+                        className="text-xs font-semibold rounded-lg px-2 py-2 text-white hover:opacity-90 transition"
+                        style={{ backgroundColor: theme.colors.error }}
+                        title="Delete Company"
+                      >
+                        <span className="flex items-center justify-center gap-1"><MdDelete className="w-3.5 h-3.5" />Delete</span>
+                      </button>
+                    </div>
+
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold text-slate-700 mb-2">Projects</p>
+                      {projects.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {projects.map((project, projectIdx) => {
+                            const isActive = selectedProjectIndex === projectIdx;
+                            return (
+                              <button
+                                key={`${company.id}-${projectIdx}`}
+                                type="button"
+                                onClick={() => handleSelectProject(company.id, projectIdx)}
+                                className={`h-12 w-12 rounded-full text-xs font-bold border transition ${
+                                  isActive
+                                    ? 'text-white border-transparent'
+                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                }`}
+                                style={isActive ? { backgroundColor: theme.colors.primary } : undefined}
+                                title={project.projectType || 'Untitled Project'}
+                              >
+                                {(project.projectType || 'P').trim().slice(0, 2).toUpperCase()}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-500 rounded-md border border-dashed border-slate-200 px-3 py-2 bg-white/90">
+                          Data pending. Create your first project.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 mb-4 rounded-xl border border-slate-200 bg-white p-3">
+                      <p className="text-xs font-semibold text-slate-700 mb-2">
+                        {activeProject ? `Employees - ${activeProject.projectType}` : 'Employees'}
+                      </p>
+
+                      {activeMembers.length > 0 ? (
+                        <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                          {activeMembers.map((member, memberIdx) => (
+                            <div key={`${company.id}-${selectedProjectIndex}-${memberIdx}`} className="rounded-md border border-slate-100 bg-slate-50 px-2 py-1.5">
+                              <p className="text-xs font-semibold text-slate-700 truncate">{member.memberName || 'Unknown Member'}</p>
+                              <p className="text-[11px] text-slate-500 truncate">ID: {member.memberId || '-'}</p>
+                              <p className="text-[11px] text-slate-600">Fee: AED {(Number(member.fee) || 0).toLocaleString()}</p>
                             </div>
-                          )}
-                          <span>{company.name}</span>
+                          ))}
                         </div>
-                      </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-700">
-                        {projects.length} Project{projects.length !== 1 ? 's' : ''}
-                      </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-700">
-                        <div className="space-y-1">
-                          <p className="font-semibold text-gray-800">{membersCount} Member{membersCount !== 1 ? 's' : ''}</p>
-                          {memberPreview.length > 0 ? (
-                            memberPreview.map((member, idx) => (
-                              <p key={idx} className="text-xs text-gray-600">
-                                {member.memberName} ({member.memberId}) - AED {member.fee.toLocaleString()}
-                              </p>
-                            ))
-                          ) : (
-                            <p className="text-xs text-gray-500">No member details</p>
-                          )}
+                      ) : (
+                        <div className="text-xs text-slate-500 rounded-md border border-dashed border-slate-200 px-3 py-2">
+                          No employee data for this project.
                         </div>
-                      </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-bold" style={{ color: theme.colors.primary }}>
-                        AED {monthlyCharge.toLocaleString()}
-                      </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm">
-                        <span
-                          className={`px-2 sm:px-3 py-1 rounded-full text-xs font-semibold ${
-                            paymentStatus === 'Paid'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-yellow-100 text-yellow-700'
-                          }`}
-                        >
-                          {paymentStatus}
-                        </span>
-                      </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleViewCompany(company);
-                            }}
-                            className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-white text-xs font-semibold hover:opacity-90 whitespace-nowrap"
-                            style={{ backgroundColor: theme.colors.primary }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              requestDeleteCompany(company);
-                            }}
-                            className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg transition text-white text-xs font-semibold hover:opacity-90 whitespace-nowrap"
-                            style={{ backgroundColor: theme.colors.error }}
-                            title="Delete Company"
-                          >
-                            <span className="flex items-center gap-1"><MdDelete className="w-4 h-4" /> Delete</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center">
-                    <p className="text-gray-500">No companies added yet</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleViewCompany(company)}
+                      className="mt-auto w-full text-xs font-semibold rounded-lg px-3 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      Edit Company Details
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 px-6 py-12 text-center">
+            <p className="text-slate-600 mb-4">No companies added yet</p>
+            <button
+              onClick={handleAddCompany}
+              className="inline-flex items-center gap-2 text-white px-5 py-2 rounded-lg hover:opacity-90 transition"
+              style={{ backgroundColor: theme.colors.primary }}
+            >
+              <MdAdd className="w-4 h-4" />
+              Create Company
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Company Detail Modal */}
@@ -754,8 +806,8 @@ export default function CompaniesPage() {
                       .filter(Boolean)
                   )
                 ).size;
-                const invoices = selectedCompany.invoices || [];
-                const paymentHistory = selectedCompany.paymentHistory || [];
+                // const invoices = selectedCompany.invoices || [];
+                // const paymentHistory = selectedCompany.paymentHistory || [];
 
                 return (
                   <>
@@ -801,13 +853,13 @@ export default function CompaniesPage() {
                   {projects.length > 0 ? (
                     projects.map((project, idx) => (
                       <div key={idx} className="bg-gray-50 rounded-lg p-4">
-                        <label className="block text-sm text-gray-600 mb-1">Project Type</label>
+                        <label className="block text-sm text-gray-600 mb-1">Project Name</label>
                         <input
                           type="text"
                           value={project.projectType}
                           onChange={(e) => handleProjectChange(idx, 'projectType', e.target.value)}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                          placeholder="Project name"
+                          placeholder="Name"
                         />
 
                         <div className="flex items-center justify-between mt-3 mb-2">
@@ -896,7 +948,7 @@ export default function CompaniesPage() {
                 </button>
               </div>
 
-              {/* Monthly Invoices */}
+              {/*
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-3">Monthly Invoices</h3>
                 <div className="bg-gray-50 rounded-lg overflow-hidden">
@@ -945,7 +997,6 @@ export default function CompaniesPage() {
                 </div>
               </div>
 
-              {/* Payment History */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-3">Payment History</h3>
                 <div className="bg-gray-50 rounded-lg overflow-hidden">
@@ -979,6 +1030,7 @@ export default function CompaniesPage() {
                   </table>
                 </div>
               </div>
+              */}
                   </>
                 );
               })()}

@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
@@ -66,10 +65,15 @@ const navItems = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isSidebarOpen, setIsSidebarOpen }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const closeOnMobile = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -77,21 +81,11 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile menu button */}
-      <button
-        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
-
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-screen w-64 text-white shadow-xl z-40 transform transition-transform duration-300 ${
-          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0 overflow-hidden flex flex-col`}
+        className={`fixed left-0 top-0 h-screen w-64 text-white shadow-xl z-40 transform transition-transform duration-300 ease-in-out ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } overflow-hidden flex flex-col`}
         style={{ backgroundColor: '#191919' }}
       >
         <div className="flex flex-col h-screen">
@@ -114,7 +108,7 @@ export default function Sidebar() {
                 <Link
                   key={item.name}
                   href={item.href}
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={closeOnMobile}
                   className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
                     isActive
                       ? 'text-white shadow-md'
@@ -159,9 +153,9 @@ export default function Sidebar() {
       </aside>
 
       {/* Overlay for mobile */}
-      {isMobileMenuOpen && (
+      {isSidebarOpen && (
         <div
-          onClick={() => setIsMobileMenuOpen(false)}
+          onClick={() => setIsSidebarOpen(false)}
           className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
         />
       )}

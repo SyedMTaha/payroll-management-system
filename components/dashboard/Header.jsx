@@ -5,8 +5,9 @@ import { useAuth } from '@/context/AuthContext';
 import { theme } from '@/lib/theme';
 import { IoNotificationsOutline } from 'react-icons/io5';
 import { CiSearch } from 'react-icons/ci';
+import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 
-export default function Header() {
+export default function Header({ isSidebarOpen, setIsSidebarOpen }) {
   const { user, userRole } = useAuth();
   const [hasUnread, setHasUnread] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -15,7 +16,16 @@ export default function Header() {
     <header className="bg-white border-b px-6 py-4 lg:px-8" style={{ borderColor: theme.colors.secondary, backgroundColor: theme.colors.background }}>
       <div className="flex items-center justify-between gap-4">
         {/* Left Section: Welcome & Date */}
-        <div className="flex flex-col">
+        <div className="flex items-start gap-3">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="mt-1 p-1 text-gray-700 hover:text-gray-900 transition"
+            aria-label={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            {isSidebarOpen ? <FiChevronLeft className="w-6 h-6" /> : <FiChevronRight className="w-6 h-6" />}
+          </button>
+
+          <div className="flex flex-col">
           <h2 className="text-2xl font-bold text-gray-800">Welcome back, {user?.displayName || 'User'}</h2>
           <div className="flex items-center text-sm text-gray-600 mt-1">
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -28,6 +38,7 @@ export default function Header() {
               day: 'numeric' 
             })}</span>
           </div>
+        </div>
         </div>
 
         {/* Right Section: Search, Notifications, Role Badge */}
